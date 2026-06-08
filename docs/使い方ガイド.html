@@ -191,10 +191,9 @@ html{font-size:15px}
 ＋ボタンを押すだけ。合計は自動で計算されます。
 </div>
 <div class="dl-row">
-<a class="dl-btn" href="https://github.com/zytakeshi/amo-koteihyo/releases/download/v1.0.0/AMO-koteihyo.exe">📥 アプリをダウンロード（Windows）</a>
-<a class="dl-btn alt" href="https://github.com/zytakeshi/amo-koteihyo/releases/latest">すべてのファイル（zip など）</a>
+<a class="dl-btn" href="https://github.com/zytakeshi/amo-koteihyo/releases/download/v1.0.0/AMO-koteihyo-windows.zip">📥 アプリをダウンロード（Windows・zip）</a>
 </div>
-<p class="dl-note">ダウンロードしたら、ダブルクリックで起動 → 最初に出る「許可しますか？」で <strong>「はい」</strong> を押してください。</p>
+<p class="dl-note">ダウンロード → 展開 → まず <strong>「ファイアウォール許可.bat」を管理者として実行</strong> → <code>AMO-koteihyo.exe</code> をダブルクリック。</p>
 <p class="scroll-hint">下にスクロールして読みましょう <span aria-hidden="true">↓</span></p>
 </header>
 
@@ -253,18 +252,21 @@ html{font-size:15px}
 <section id="s2" class="section reveal-hidden">
 <div class="section-head"><span class="section-num">2</span><h2>パソコン（Windows）で起動する</h2></div>
 <ol class="steps">
-<li>パソコンに保存した <strong>「AMO-koteihyo.exe」</strong>をダブルクリックします。</li>
-<li><strong>黒い小さなウィンドウ</strong>が開き、「起動しました」「接続用URL」が表示されます。<br>
+<li>上の <strong>「アプリをダウンロード（zip）」</strong>から <code>AMO-koteihyo-windows.zip</code> を保存します。</li>
+<li>保存したzipを <strong>右クリック →「すべて展開」</strong> で展開します。<br>
+中に <strong>AMO-koteihyo.exe</strong> と <strong>ファイアウォール許可.bat</strong> の2つが入っています。</li>
+<li><strong>はじめに1回だけ：</strong> <strong>「ファイアウォール許可.bat」を右クリック →「管理者として実行」</strong>します。<br>
+<strong>「許可しますか？」</strong>が出たら <strong>「はい」</strong> を押してください（iPad/iPhoneからつなぐために必要です）。</li>
+<li><strong>「AMO-koteihyo.exe」をダブルクリック</strong>して起動します。</li>
+<li><strong>黒い小さなウィンドウ</strong>が開き、接続用URLが表示されます。<br>
 <span style="color:var(--rose);font-weight:700">⚠ このウィンドウは閉じないでください</span>（閉じるとアプリが止まります）。<br>
 同時に、このPCの画面でアプリが自動で開きます。</li>
-<li>初回だけ、<strong>「許可しますか？」</strong>という青いポップアップが出ます。<br>
-→ <strong>かならず「はい」を押してください</strong>。これで iPad / iPhone から自動でつながります（受信の許可・<strong>最初の1回だけ</strong>）。</li>
 </ol>
 
 <div class="card" style="border-left:4px solid var(--rose)">
-<strong>💡「はい」を押しそびれて、携帯からつながらない時は</strong><br>
-ダウンロードページの <code>AMO-koteihyo-windows.zip</code> を保存して展開し、中の
-<strong>「ファイアウォール許可.bat」を右クリック →「管理者として実行」</strong>すれば一発で直ります（初回だけ）。
+<strong>💡 ポイント</strong><br>
+「ファイアウォール許可.bat」は<strong>最初の1回だけ</strong>でOK。2回目以降は <code>AMO-koteihyo.exe</code> をダブルクリックするだけで使えます。<br>
+※ <strong>2つのファイルは同じフォルダに置いたまま</strong>にしてください（batがexeを許可するため）。
 </div>
 
 <div class="mini-ui">
