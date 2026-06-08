@@ -43,6 +43,10 @@ h1{font-size:1.7rem}h2{font-size:1.35rem}h3{font-size:1.1rem}
 @media(prefers-reduced-motion:reduce){.hero .scroll-hint span{animation:none}}
 
 /* toc */
+.dl-row{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:24px 0 6px}
+.dl-btn{display:inline-flex;align-items:center;gap:8px;background:var(--rose);color:#fff;font-weight:700;text-decoration:none;padding:14px 26px;border-radius:var(--r-pill);font-size:1.05rem;box-shadow:0 4px 14px rgba(0,0,0,.14)}
+.dl-btn.alt{background:var(--white);color:var(--ink);border:1px solid var(--line);box-shadow:none;font-size:.92rem;padding:12px 22px}
+.dl-note{color:var(--muted);font-size:.82rem;margin-top:8px}
 .toc{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:20px 24px;margin:0 auto 40px;max-width:520px}
 .toc h2{font-size:1rem;margin-bottom:10px}
 .toc ol{padding-left:1.4em;font-size:.92rem}
@@ -186,6 +190,11 @@ html{font-size:15px}
 <strong>紙の集計表を、iPad・iPhone・パソコンでかんたんに。</strong><br>
 ＋ボタンを押すだけ。合計は自動で計算されます。
 </div>
+<div class="dl-row">
+<a class="dl-btn" href="https://github.com/zytakeshi/amo-koteihyo/releases/download/v1.0.0/AMO-koteihyo.exe">📥 アプリをダウンロード（Windows）</a>
+<a class="dl-btn alt" href="https://github.com/zytakeshi/amo-koteihyo/releases/latest">すべてのファイル（zip など）</a>
+</div>
+<p class="dl-note">ダウンロードしたら、ダブルクリックで起動 → 最初に出る「許可しますか？」で <strong>「はい」</strong> を押してください。</p>
 <p class="scroll-hint">下にスクロールして読みましょう <span aria-hidden="true">↓</span></p>
 </header>
 
@@ -244,17 +253,23 @@ html{font-size:15px}
 <section id="s2" class="section reveal-hidden">
 <div class="section-head"><span class="section-num">2</span><h2>パソコン（Windows）で起動する</h2></div>
 <ol class="steps">
-<li>パソコンにある <strong>「AMO工程表.exe」</strong>をダブルクリックします。</li>
+<li>パソコンに保存した <strong>「AMO-koteihyo.exe」</strong>をダブルクリックします。</li>
 <li><strong>黒い小さなウィンドウ</strong>が開き、「起動しました」「接続用URL」が表示されます。<br>
 <span style="color:var(--rose);font-weight:700">⚠ このウィンドウは閉じないでください</span>（閉じるとアプリが止まります）。<br>
 同時に、このPCの画面でアプリが自動で開きます。</li>
-<li>初回だけ、Windowsが<strong>「このアプリにアクセスを許可しますか？」</strong>と聞いてきます。<br>
-→ <strong>「アクセスを許可」を押してください</strong>（iPad/iPhoneからつなぐために必要です）。</li>
+<li>初回だけ、<strong>「許可しますか？」</strong>という青いポップアップが出ます。<br>
+→ <strong>かならず「はい」を押してください</strong>。これで iPad / iPhone から自動でつながります（受信の許可・<strong>最初の1回だけ</strong>）。</li>
 </ol>
+
+<div class="card" style="border-left:4px solid var(--rose)">
+<strong>💡「はい」を押しそびれて、携帯からつながらない時は</strong><br>
+ダウンロードページの <code>AMO-koteihyo-windows.zip</code> を保存して展開し、中の
+<strong>「ファイアウォール許可.bat」を右クリック →「管理者として実行」</strong>すれば一発で直ります（初回だけ）。
+</div>
 
 <div class="mini-ui">
 <div class="console">
-<span class="dim">C:\AMO&gt;</span> AMO工程表.exe<br>
+<span class="dim">C:\AMO&gt;</span> AMO-koteihyo.exe<br>
 ✔ 起動しました<br>
 → 接続用URL: <strong>http://192.168.1.5:8080</strong><br>
 <span class="dim">(このウィンドウは閉じないでください)</span>
@@ -497,7 +512,7 @@ html{font-size:15px}
 <h3 style="margin:8px 0 6px">保存先</h3>
 <div class="file-tree">
 <span class="folder">📁 AMO工程表のフォルダ</span><br>
-&nbsp;&nbsp;├ AMO工程表.exe<br>
+&nbsp;&nbsp;├ AMO-koteihyo.exe<br>
 &nbsp;&nbsp;└ <span class="folder">📁 data</span><br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ <span class="highlight">koteihyo.json</span> ← これがデータ
 </div>
@@ -519,7 +534,7 @@ html{font-size:15px}
 次を順に確認してください：<br>
 <strong>ⓐ</strong> パソコンと<strong>同じWi-Fi</strong>につないでいるか<br>
 <strong>ⓑ</strong> パソコンのアプリ（黒いウィンドウ）が<strong>起動中</strong>か<br>
-<strong>ⓒ</strong> 初回の<strong>「アクセスを許可」</strong>を押したか<br>
+<strong>ⓒ</strong> 初回の「許可しますか？」で<strong>「はい」</strong>を押したか（押しそびれたら zip の「ファイアウォール許可.bat」を管理者として実行）<br>
 <strong>ⓓ</strong> 「接続」画面の<strong>最新のURL / QRコード</strong>を使っているか
 </div>
 </details>
