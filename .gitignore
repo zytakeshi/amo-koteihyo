@@ -1,0 +1,17 @@
+# 実行時データ（PCローカルに保存される工程表データ）
+/data/
+data/
+*.json.tmp
+
+# ビルド成果物
+/build/*.exe
+/build/*-mac
+/build/*-linux
+koteihyo
+koteihyo.exe
+
+.DS_Store
+
+/go.work
+go.work
+go.work.sum

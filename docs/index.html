@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AMO BARBER 工程表 — 使い方ガイド</title>
+<meta name="description" content="AMO BARBER 工程表アプリの使い方マニュアル。スタッフ向けのかんたんガイドです。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232b2620'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='serif' font-size='22' font-weight='bold' fill='%23f3ead7'%3EA%3C/text%3E%3C/svg%3E">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--paper:#f3ead7;--paper-2:#e3d6be;--ink:#2b2620;--muted:#7a7062;--line:#c9b99a;
+--rose:#c0465a;--green:#3a8a5c;--white:#faf8f2;
+--ff-head:"Noto Serif JP","Yu Mincho","Hiragino Mincho ProN","MS PMincho",serif;
+--ff-body:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,"Noto Sans JP",sans-serif;
+--r:8px;--r-pill:999px;
+}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;font-size:17px}
+body{font-family:var(--ff-body);color:var(--ink);background:var(--paper);line-height:1.8;
+background-image:
+linear-gradient(var(--line) 1px,transparent 1px),
+linear-gradient(90deg,var(--line) 1px,transparent 1px);
+background-size:72px 72px;background-position:center center;
+background-blend-mode:multiply;
+}
+body::before{content:"";position:fixed;inset:0;background:var(--paper);opacity:.92;z-index:-1;pointer-events:none}
+a{color:var(--rose);text-decoration:none}
+a:hover,a:focus-visible{text-decoration:underline}
+a:focus-visible{outline:2px solid var(--rose);outline-offset:2px;border-radius:3px}
+img,svg{display:block;max-width:100%}
+h1,h2,h3{font-family:var(--ff-head);font-weight:700;line-height:1.4}
+h1{font-size:1.7rem}h2{font-size:1.35rem}h3{font-size:1.1rem}
+
+/* layout */
+.wrap{max-width:760px;margin:0 auto;padding:0 20px}
+.hero{text-align:center;padding:56px 20px 40px}
+.hero h1{margin-bottom:12px;letter-spacing:.04em}
+.hero .sub{color:var(--muted);font-size:.95rem;margin-bottom:20px}
+.hero .promise{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:16px 20px;font-size:1rem;display:inline-block;max-width:520px;text-align:left}
+.hero .scroll-hint{margin-top:28px;color:var(--muted);font-size:.85rem}
+.hero .scroll-hint span{display:inline-block;animation:bounce 2s infinite}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+@media(prefers-reduced-motion:reduce){.hero .scroll-hint span{animation:none}}
+
+/* toc */
+.toc{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:20px 24px;margin:0 auto 40px;max-width:520px}
+.toc h2{font-size:1rem;margin-bottom:10px}
+.toc ol{padding-left:1.4em;font-size:.92rem}
+.toc li{margin-bottom:4px}
+.toc li a{color:var(--ink)}
+.toc li a:hover{color:var(--rose)}
+
+/* sections */
+.section{padding:36px 0;opacity:1;transform:translateY(0);transition:opacity .5s ease,transform .5s ease}
+.section.reveal-hidden{opacity:0;transform:translateY(28px)}
+@media(prefers-reduced-motion:reduce){.section.reveal-hidden{opacity:1;transform:none;transition:none}}
+/* 印刷時は全セクションを必ず表示（スクロール前に印刷しても白紙にならないように） */
+@media print{.section.reveal-hidden{opacity:1 !important;transform:none !important}}
+.section+.section{border-top:1px solid var(--line)}
+.section-num{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;background:var(--ink);color:var(--white);border-radius:50%;font-size:.85rem;font-weight:700;flex-shrink:0;font-family:var(--ff-body)}
+.section-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.section p,.section li{margin-bottom:8px;font-size:.97rem}
+.section ul,.section ol{padding-left:1.3em}
+.section ol li{margin-bottom:10px}
+
+/* step list */
+.steps{list-style:none;padding:0;counter-reset:step}
+.steps li{counter-increment:step;padding-left:36px;position:relative;margin-bottom:14px}
+.steps li::before{content:counter(step);position:absolute;left:0;top:1px;width:26px;height:26px;background:var(--ink);color:var(--white);border-radius:50%;font-size:.78rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+/* mini-ui figures */
+.mini-ui{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:18px 0;overflow-x:auto}
+.mini-ui .caption{font-size:.8rem;color:var(--muted);text-align:center;margin-top:8px}
+
+/* stepper */
+.stepper{display:inline-flex;align-items:center;gap:0;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);font-size:1rem;vertical-align:middle}
+.stepper .btn-minus,.stepper .btn-plus{border:none;width:44px;height:40px;font-size:1.2rem;font-weight:700;cursor:default;display:flex;align-items:center;justify-content:center}
+.stepper .btn-minus{background:var(--white);color:var(--ink)}
+.stepper .btn-plus{background:var(--rose);color:var(--white)}
+.stepper .val{width:40px;text-align:center;font-weight:700;background:var(--white);height:40px;line-height:40px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+
+/* compare boxes */
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+.compare-box{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:14px;text-align:center}
+.compare-box.after{border-color:var(--green);background:#f0f7f2}
+.compare-box h3{font-size:.9rem;margin-bottom:6px}
+.compare-box p{font-size:.85rem;color:var(--muted);margin:0}
+.compare-box .emoji{font-size:1.6rem;margin-bottom:6px}
+@media(max-width:480px){.compare{grid-template-columns:1fr}}
+
+/* cards */
+.card{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:8px 0}
+.card.dark{background:var(--ink);color:var(--white);border-color:var(--ink)}
+.card.dark .label{color:rgba(255,255,255,.65)}
+.card .label{font-size:.78rem;color:var(--muted);margin-bottom:4px}
+.card .big{font-size:1.3rem;font-weight:700}
+.cards-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+@media(max-width:480px){.cards-row{grid-template-columns:1fr}}
+
+/* console mock */
+.console{background:#1a1a1a;color:#80ff80;border-radius:var(--r);padding:14px 16px;font-family:"SF Mono",Consolas,"Courier New",monospace;font-size:.82rem;line-height:1.6;margin:16px 0;overflow-x:auto}
+.console .dim{color:#668866}
+
+/* qr mock */
+.qr-mock{width:100px;height:100px;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);gap:2px;margin:0 auto}
+.qr-mock span{background:var(--ink);border-radius:2px}
+.qr-mock span:nth-child(even){background:var(--paper-2)}
+
+/* tabs mock */
+.tabs-mock{display:flex;gap:0;border-bottom:2px solid var(--line);margin-bottom:12px}
+.tabs-mock .tab{padding:8px 14px;font-size:.82rem;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted);cursor:default}
+.tabs-mock .tab.active{border-bottom-color:var(--rose);color:var(--ink);font-weight:700}
+
+/* nav mock */
+.nav-mock{display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0}
+.nav-mock .btn-nav{background:var(--white);border:1px solid var(--line);border-radius:var(--r-pill);padding:6px 14px;font-size:.82rem;cursor:default}
+.nav-mock .btn-nav.rose{background:var(--rose);color:var(--white);border-color:var(--rose)}
+.nav-mock .week-label{font-weight:700;font-size:.9rem}
+
+/* undo icons */
+.undo-row{display:flex;gap:16px;flex-wrap:wrap;margin:16px 0}
+.undo-item{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:14px;text-align:center;flex:1;min-width:120px}
+.undo-item .icon{font-size:1.5rem;margin-bottom:4px}
+.undo-item .name{font-weight:700;font-size:.88rem;margin-bottom:2px}
+.undo-item .desc{font-size:.78rem;color:var(--muted)}
+
+/* settings mock */
+.setting-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.88rem}
+.setting-row:last-child{border-bottom:none}
+.setting-row .name{flex:1;font-weight:600}
+.setting-row .price{color:var(--muted);width:70px;text-align:right}
+.setting-row .arrows{color:var(--muted);font-size:.8rem}
+
+/* qa */
+.qa-item{margin-bottom:18px}
+.qa-item summary{font-weight:700;cursor:pointer;padding:8px 0;list-style:none;position:relative;padding-left:28px;font-size:.95rem}
+.qa-item summary::before{content:"Q";position:absolute;left:0;width:22px;height:22px;background:var(--rose);color:var(--white);border-radius:50%;font-size:.72rem;display:flex;align-items:center;justify-content:center;font-weight:700;top:8px}
+.qa-item summary:focus-visible{outline:2px solid var(--rose);outline-offset:2px;border-radius:3px}
+.qa-item .answer{padding:6px 0 6px 28px;font-size:.9rem;color:var(--muted)}
+.qa-item .answer strong{color:var(--ink)}
+
+/* badge / pill */
+.pill{display:inline-block;background:var(--paper-2);color:var(--ink);border-radius:var(--r-pill);padding:2px 10px;font-size:.78rem;font-weight:600}
+.pill.rose{background:var(--rose);color:var(--white)}
+.pill.green{background:var(--green);color:var(--white)}
+
+/* tip box */
+.tip{background:var(--paper-2);border-left:3px solid var(--rose);border-radius:0 var(--r) var(--r) 0;padding:12px 16px;margin:14px 0;font-size:.88rem}
+.tip .tip-label{font-weight:700;color:var(--rose);font-size:.8rem;margin-bottom:2px}
+
+/* footer */
+.footer{text-align:center;padding:40px 20px;color:var(--muted);font-size:.82rem;border-top:1px solid var(--line);margin-top:20px}
+
+/* table mock */
+.tbl-mock{width:100%;border-collapse:collapse;font-size:.82rem;margin:10px 0}
+.tbl-mock th,.tbl-mock td{border:1px solid var(--line);padding:6px 8px;text-align:center}
+.tbl-mock th{background:var(--paper-2);font-weight:600}
+.tbl-mock .day-active{background:#fdf0f2}
+
+/* file tree */
+.file-tree{font-family:"SF Mono",Consolas,monospace;font-size:.82rem;background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin:14px 0;line-height:1.8}
+.file-tree .folder{color:var(--muted)}
+.file-tree .highlight{background:#fdf0f2;padding:1px 6px;border-radius:3px;font-weight:700}
+
+/* responsive */
+@media(max-width:480px){
+html{font-size:15px}
+.hero{padding:36px 16px 28px}
+.hero h1{font-size:1.4rem}
+.wrap{padding:0 14px}
+.section{padding:28px 0}
+}
+@media(min-width:1200px){
+.wrap{max-width:800px}
+}
+</style>
+<noscript><style>.section.reveal-hidden{opacity:1 !important;transform:none !important}</style></noscript>
+</head>
+<body>
+
+<!-- ===== HERO ===== -->
+<header class="hero" role="banner">
+<h1>AMO BARBER 工程表<br><span style="font-size:.65em;letter-spacing:.02em">— 使い方ガイド —</span></h1>
+<p class="sub">社内マニュアル</p>
+<div class="promise">
+<strong>紙の集計表を、iPad・iPhone・パソコンでかんたんに。</strong><br>
+＋ボタンを押すだけ。合計は自動で計算されます。
+</div>
+<p class="scroll-hint">下にスクロールして読みましょう <span aria-hidden="true">↓</span></p>
+</header>
+
+<main class="wrap" role="main">
+
+<!-- ===== TOC ===== -->
+<nav class="toc" aria-label="目次">
+<h2>📖 もくじ</h2>
+<ol>
+<li><a href="#s1">これは何？</a></li>
+<li><a href="#s2">パソコンで起動する</a></li>
+<li><a href="#s3">iPad / iPhone をつなぐ</a></li>
+<li><a href="#s4">基本の使い方 — ＋／−で数える</a></li>
+<li><a href="#s5">週・カレンダー・スタッフの切り替え</a></li>
+<li><a href="#s6">合計の見方</a></li>
+<li><a href="#s7">戻る・元に戻す・履歴</a></li>
+<li><a href="#s8">設定 — 工程名・単価・スタッフを変える</a></li>
+<li><a href="#s9">CSV書き出し・印刷</a></li>
+<li><a href="#s10">データの保存・バックアップ・引っ越し</a></li>
+<li><a href="#s11">困ったとき（Q&amp;A）</a></li>
+</ol>
+</nav>
+
+<!-- ===== 1. これは何？ ===== -->
+<section id="s1" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">1</span><h2>これは何？</h2></div>
+<p>今まで<strong>紙でやっていた「工程ごとの件数の集計表（週間）」</strong>を、デジタルにしたアプリです。</p>
+<p>工程（シャンプー・シェービング・ヘッドスパなど）の件数を、<strong>曜日ごと・スタッフごと</strong>に数えて、<strong>合計と売上を自動計算</strong>します。</p>
+
+<table class="tbl-mock" aria-label="工程と単価の一覧">
+<tr><th>工程</th><th>単価</th></tr>
+<tr><td>シャンプー</td><td>¥600</td></tr>
+<tr><td>シェービング</td><td>¥600</td></tr>
+<tr><td>ヘッドスパ</td><td>¥2,500</td></tr>
+<tr><td>肩マッサージ</td><td>¥400</td></tr>
+<tr><td>パック</td><td>¥500</td></tr>
+<tr><td>ピーリング</td><td>¥500</td></tr>
+<tr><td>造顔マッサージ</td><td>¥2,500</td></tr>
+</table>
+
+<div class="compare">
+<div class="compare-box">
+<div class="emoji">📝</div>
+<h3>今まで（紙）</h3>
+<p>手で書いて、電卓で合計</p>
+</div>
+<div class="compare-box after">
+<div class="emoji">📱</div>
+<h3>これから（アプリ）</h3>
+<p><strong>＋を押すだけ、合計は自動</strong></p>
+</div>
+</div>
+</section>
+
+<!-- ===== 2. パソコンで起動する ===== -->
+<section id="s2" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">2</span><h2>パソコン（Windows）で起動する</h2></div>
+<ol class="steps">
+<li>パソコンにある <strong>「AMO工程表.exe」</strong>をダブルクリックします。</li>
+<li><strong>黒い小さなウィンドウ</strong>が開き、「起動しました」「接続用URL」が表示されます。<br>
+<span style="color:var(--rose);font-weight:700">⚠ このウィンドウは閉じないでください</span>（閉じるとアプリが止まります）。<br>
+同時に、このPCの画面でアプリが自動で開きます。</li>
+<li>初回だけ、Windowsが<strong>「このアプリにアクセスを許可しますか？」</strong>と聞いてきます。<br>
+→ <strong>「アクセスを許可」を押してください</strong>（iPad/iPhoneからつなぐために必要です）。</li>
+</ol>
+
+<div class="mini-ui">
+<div class="console">
+<span class="dim">C:\AMO&gt;</span> AMO工程表.exe<br>
+✔ 起動しました<br>
+→ 接続用URL: <strong>http://192.168.1.5:8080</strong><br>
+<span class="dim">(このウィンドウは閉じないでください)</span>
+</div>
+<div class="caption">▲ 黒いウィンドウの表示イメージ</div>
+</div>
+
+<div class="tip">
+<div class="tip-label">💡 ポイント</div>
+データはexeと同じ場所の <strong>data\koteihyo.json</strong> に自動保存されます。保存ボタンは不要です。
+</div>
+</section>
+
+<!-- ===== 3. iPad / iPhone をつなぐ ===== -->
+<section id="s3" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">3</span><h2>iPad / iPhone をつなぐ（QRコード）</h2></div>
+<ol class="steps">
+<li>アプリ右上の <strong>「接続」</strong>を開きます。</li>
+<li>大きなURLと<strong>QRコード</strong>が表示されます。</li>
+<li>iPad / iPhone を<strong>パソコンと同じWi-Fi</strong>につなぎます。</li>
+<li>カメラでQRコードを読みます（またはURLを手入力）。</li>
+<li>同じ画面がiPad / iPhoneに開きます。</li>
+</ol>
+
+<div class="mini-ui" style="text-align:center">
+<div style="display:inline-flex;align-items:center;gap:24px;flex-wrap:wrap;justify-content:center">
+<div>
+<div class="qr-mock" aria-label="QRコードのイメージ">
+<span></span><span></span><span></span><span></span><span></span>
+<span></span><span></span><span></span><span></span><span></span>
+<span></span><span></span><span></span><span></span><span></span>
+<span></span><span></span><span></span><span></span><span></span>
+<span></span><span></span><span></span><span></span><span></span>
+</div>
+<div style="font-size:.78rem;color:var(--muted);margin-top:6px">QRコード</div>
+</div>
+<div style="font-size:.9rem;text-align:left;max-width:200px">
+<strong style="color:var(--rose)">📶 同じWi-Fiでつないでね</strong><br>
+<span style="font-size:.82rem;color:var(--muted)">パソコンとiPadが別のWi-Fiだと、つながりません。</span>
+</div>
+</div>
+<div class="caption">▲ 「接続」画面のイメージ</div>
+</div>
+
+<div class="tip">
+<div class="tip-label">💡 ポイント</div>
+パソコンのアプリ（黒いウィンドウ）を起動したままにしておけば、iPad・iPhone・別のPCのどれからでも<strong>同じデータ</strong>を見て編集できます。
+</div>
+</section>
+
+<!-- ===== 4. 基本の使い方 ===== -->
+<section id="s4" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">4</span><h2>基本の使い方 — ＋／−で数える <span class="pill rose">いちばん大事</span></h2></div>
+<ol class="steps">
+<li><strong>カレンダー</strong>（最初の画面）で日付をタップ → その週の表が開きます。</li>
+<li>表は<strong>「工程（たて）× 曜日 月〜日（よこ）」</strong>になっています。</li>
+<li>あるお客さんにシャンプーをしたら、その曜日のシャンプー欄の<strong>「＋」を1回押す ＝ 1件</strong>。</li>
+<li>間違えたら<strong>「−」で1件減らせます</strong>（0より下にはなりません）。</li>
+</ol>
+
+<div class="mini-ui">
+<table class="tbl-mock" aria-label="工程表のイメージ">
+<tr>
+<th style="text-align:left">工程</th><th>単価</th><th>月</th><th class="day-active">火</th><th>水</th>
+</tr>
+<tr>
+<td style="text-align:left;font-weight:600">シャンプー</td>
+<td style="color:var(--muted)">¥600</td>
+<td>
+<div class="stepper"><span class="btn-minus">−</span><span class="val">2</span><span class="btn-plus">＋</span></div>
+</td>
+<td class="day-active">
+<div class="stepper"><span class="btn-minus">−</span><span class="val">3</span><span class="btn-plus">＋</span></div>
+</td>
+<td>
+<div class="stepper"><span class="btn-minus">−</span><span class="val">0</span><span class="btn-plus">＋</span></div>
+</td>
+</tr>
+<tr>
+<td style="text-align:left;font-weight:600">シェービング</td>
+<td style="color:var(--muted)">¥600</td>
+<td>
+<div class="stepper"><span class="btn-minus">−</span><span class="val">1</span><span class="btn-plus">＋</span></div>
+</td>
+<td class="day-active">
+<div class="stepper"><span class="btn-minus">−</span><span class="val">2</span><span class="btn-plus">＋</span></div>
+</td>
+<td>
+<div class="stepper"><span class="btn-minus">−</span><span class="val">0</span><span class="btn-plus">＋</span></div>
+</td>
+</tr>
+</table>
+<div class="caption">▲ 表のイメージ — <span style="color:var(--rose)">＋</span>はローズ色、<span>−</span>は白</div>
+</div>
+
+<div class="tip">
+<div class="tip-label">💡 ポイント</div>
+＋と−のボタンは大きめに作ってあるので、iPadでもタッチしやすいです。
+</div>
+</section>
+
+<!-- ===== 5. 切り替え ===== -->
+<section id="s5" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">5</span><h2>週・カレンダー・スタッフの切り替え</h2></div>
+
+<h3 style="margin:12px 0 6px">週の移動</h3>
+<p>上にある「◀ 前週」「次週 ▶」「今週」で週を移動できます。<br>「カレンダー」でいつでも別の日付へジャンプ。</p>
+
+<div class="mini-ui">
+<div class="nav-mock">
+<span class="btn-nav">◀ 前週</span>
+<span class="week-label">6/2 〜 6/8</span>
+<span class="btn-nav">次週 ▶</span>
+<span class="btn-nav rose">今週</span>
+</div>
+<div class="caption">▲ 週の移動ボタン</div>
+</div>
+
+<h3 style="margin:12px 0 6px">スタッフの切り替え</h3>
+<p>上の「スタッフ」タブで担当者を切り替えます。スタッフごとに自分の表があります。</p>
+
+<div class="mini-ui">
+<div class="tabs-mock">
+<span class="tab active">小池</span>
+<span class="tab">井上</span>
+<span class="tab">浜田</span>
+</div>
+<div class="caption">▲ スタッフタブのイメージ</div>
+</div>
+
+<h3 style="margin:12px 0 6px">備考</h3>
+<p>表の一番下に<strong>「備考」</strong>があります。その日のメモを書けます（自動保存）。</p>
+</section>
+
+<!-- ===== 6. 合計の見方 ===== -->
+<section id="s6" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">6</span><h2>合計の見方（自動計算）</h2></div>
+<p>表の下に<strong>「日別合計」</strong>（曜日ごとの件数・売上）が出ます。</p>
+<p>さらに下に<strong>2つのカード</strong>があります：</p>
+
+<div class="cards-row">
+<div class="card">
+<div class="label">小池 さんの週合計</div>
+<div class="big" style="color:var(--green)">42件 / ¥28,400</div>
+</div>
+<div class="card dark">
+<div class="label">全体（全スタッフ）週合計</div>
+<div class="big">126件 / ¥85,200</div>
+</div>
+</div>
+
+<p>どちらも<strong>件数</strong>と<strong>売上（単価×件数）</strong>が表示されます。<br>
+白いカード＝選んでいるスタッフ、<strong>黒いカード＝お店全体</strong>の合計です。</p>
+</section>
+
+<!-- ===== 7. 戻る・元に戻す・履歴 ===== -->
+<section id="s7" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">7</span><h2>戻る・元に戻す・履歴</h2></div>
+<p>大事な区別があります：</p>
+
+<div class="undo-row">
+<div class="undo-item">
+<div class="icon">←</div>
+<div class="name">戻る</div>
+<div class="desc">ひとつ前の<strong>画面</strong>に戻るだけ</div>
+</div>
+<div class="undo-item">
+<div class="icon">⟲</div>
+<div class="name">元に戻す</div>
+<div class="desc">直前の<strong>操作</strong>を取り消す<br>（何回でも前に戻れる）</div>
+</div>
+<div class="undo-item">
+<div class="icon">⟳</div>
+<div class="name">やり直し</div>
+<div class="desc">取り消したのを<br>もう一度やる</div>
+</div>
+</div>
+
+<p>元に戻すと、何を戻したかが表示されるので安心です。</p>
+
+<div class="mini-ui">
+<div style="background:var(--paper-2);border-radius:var(--r);padding:10px 14px;font-size:.85rem;text-align:center">
+✅「<strong>浜田 6/8 シャンプー +1</strong>」を元に戻しました
+</div>
+<div class="caption">▲ 元に戻したときの表示</div>
+</div>
+
+<h3 style="margin:16px 0 6px">履歴画面</h3>
+<p><strong>「履歴」</strong>画面では、<strong>いつ・誰が・何をしたか</strong>（＋1、名前変更 など）を日付ごとにすべて記録しています。消えません。</p>
+<p>各記録の<strong>「ここまで戻す」</strong>で、その時点の状態まで戻せます。</p>
+</section>
+
+<!-- ===== 8. 設定 ===== -->
+<section id="s8" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">8</span><h2>設定 — 工程名・単価・スタッフを変える</h2></div>
+<p><strong>「設定」</strong>を開くと、工程の名前と単価をその場で書き換えられます。</p>
+
+<div class="mini-ui">
+<div style="font-size:.82rem;font-weight:700;margin-bottom:8px;color:var(--muted)">工程の設定</div>
+<div class="setting-row"><span class="arrows">▲ ▼</span><span class="name">シャンプー</span><span class="price">¥600</span></div>
+<div class="setting-row"><span class="arrows">▲ ▼</span><span class="name">シェービング</span><span class="price">¥600</span></div>
+<div class="setting-row"><span class="arrows">▲ ▼</span><span class="name">ヘッドスパ</span><span class="price">¥2,500</span></div>
+<div style="margin-top:10px">
+<span class="pill rose" style="cursor:default">＋ 工程を追加</span>
+</div>
+<div class="caption">▲ 設定画面のイメージ — ▲▼で並べ替え</div>
+</div>
+
+<p>スタッフも<strong>「＋スタッフを追加」「名前変更」「削除」</strong>ができます。</p>
+
+<div class="tip">
+<div class="tip-label">💡 ポイント</div>
+変更もすべて<strong>履歴に残り、元に戻せます</strong>。安心して試してください。
+</div>
+</section>
+
+<!-- ===== 9. CSV書き出し・印刷 ===== -->
+<section id="s9" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">9</span><h2>CSV書き出し・印刷（紙の代わり）</h2></div>
+<ol class="steps">
+<li>「設定」の下にある<strong>「書き出し・印刷」</strong>を開きます。</li>
+<li><strong>開始日〜終了日</strong>を選びます。</li>
+<li><strong>「CSV書き出し」</strong>＝ Excelで開ける表として保存（日本語OK）。</li>
+<li><strong>「印刷」</strong>＝ そのまま紙に印刷できます。</li>
+</ol>
+
+<div class="mini-ui" style="text-align:center">
+<div style="display:inline-flex;gap:10px;flex-wrap:wrap;justify-content:center">
+<span class="pill green" style="padding:8px 18px;font-size:.9rem;cursor:default">📄 CSV書き出し</span>
+<span class="pill" style="padding:8px 18px;font-size:.9rem;cursor:default">🖨 印刷</span>
+</div>
+<div class="caption">▲ 書き出し・印刷ボタン</div>
+</div>
+</section>
+
+<!-- ===== 10. データの保存場所 ===== -->
+<section id="s10" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">10</span><h2>データの保存・バックアップ・引っ越し</h2></div>
+
+<h3 style="margin:8px 0 6px">保存先</h3>
+<div class="file-tree">
+<span class="folder">📁 AMO工程表のフォルダ</span><br>
+&nbsp;&nbsp;├ AMO工程表.exe<br>
+&nbsp;&nbsp;└ <span class="folder">📁 data</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ <span class="highlight">koteihyo.json</span> ← これがデータ
+</div>
+
+<h3 style="margin:14px 0 6px">バックアップ</h3>
+<p><strong>koteihyo.json</strong> をUSBメモリやクラウド（OneDriveなど）にコピーしておけば安心です。</p>
+
+<h3 style="margin:14px 0 6px">PCを買い替えたとき</h3>
+<p>新しいPCに <strong>exe</strong> を置き、<strong>data\koteihyo.json</strong> を同じ場所にコピーするだけ。全部のデータがそのまま使えます。</p>
+</section>
+
+<!-- ===== 11. Q&A ===== -->
+<section id="s11" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">11</span><h2>困ったとき（Q&amp;A）</h2></div>
+
+<details class="qa-item">
+<summary>iPad / iPhone で開けない</summary>
+<div class="answer">
+次を順に確認してください：<br>
+<strong>ⓐ</strong> パソコンと<strong>同じWi-Fi</strong>につないでいるか<br>
+<strong>ⓑ</strong> パソコンのアプリ（黒いウィンドウ）が<strong>起動中</strong>か<br>
+<strong>ⓒ</strong> 初回の<strong>「アクセスを許可」</strong>を押したか<br>
+<strong>ⓓ</strong> 「接続」画面の<strong>最新のURL / QRコード</strong>を使っているか
+</div>
+</details>
+
+<details class="qa-item">
+<summary>起動するたびにURLの数字（ポート）が変わる</summary>
+<div class="answer">
+前回の番号がまだ使用中のときに起こります。<br>
+→ <strong>「接続」画面の"今のQR / URL"</strong>を使えばOKです。
+</div>
+</details>
+
+<details class="qa-item">
+<summary>黒いウィンドウを閉じてしまった</summary>
+<div class="answer">
+アプリが止まっただけです。<strong>データは消えません</strong>。<br>
+→ もう一度 <strong>exe をダブルクリック</strong>すれば再開します。
+</div>
+</details>
+
+<details class="qa-item">
+<summary>＋を押しても変わらない / 反応が遅い</summary>
+<div class="answer">
+→ 少し待ってから、<strong>画面を再読み込み</strong>（ブラウザの更新ボタン）してみてください。
+</div>
+</details>
+</section>
+
+</main>
+
+<!-- ===== FOOTER ===== -->
+<footer class="footer" role="contentinfo">
+<p><strong>AMO BARBER 工程表</strong> — 社内用</p>
+<p style="margin-top:6px">わからないことがあったら、店長に聞いてください 😊</p>
+</footer>
+
+<script>
+// Reveal on scroll with IntersectionObserver
+(function(){
+var mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+if(mq.matches) return; // skip all animation
+var sections=document.querySelectorAll('.section.reveal-hidden');
+if(!('IntersectionObserver' in window)){
+sections.forEach(function(s){s.classList.remove('reveal-hidden')});
+return;
+}
+var obs=new IntersectionObserver(function(entries){
+entries.forEach(function(e){
+if(e.isIntersecting){
+e.target.classList.remove('reveal-hidden');
+obs.unobserve(e.target);
+}
+});
+},{threshold:0.12,rootMargin:'0px 0px -40px 0px'});
+sections.forEach(function(s){obs.observe(s)});
+// Listen for changes to reduced-motion preference
+mq.addEventListener('change',function(e){
+if(e.matches){
+sections.forEach(function(s){s.classList.remove('reveal-hidden');obs.unobserve(s)});
+}
+});
+})();
+
+// Smooth scroll for TOC links (fallback for browsers without CSS scroll-behavior)
+document.querySelectorAll('.toc a[href^="#"]').forEach(function(a){
+a.addEventListener('click',function(e){
+var target=document.querySelector(this.getAttribute('href'));
+if(target){
+e.preventDefault();
+target.scrollIntoView({behavior:'smooth',block:'start'});
+target.focus({preventScroll:true});
+}
+});
+});
+</script>
+</body>
+</html>
