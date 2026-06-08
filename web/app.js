@@ -211,6 +211,12 @@
     state.today = data.today || "";
     state.weekStart = data.weekStart || weekStartOf(data.today || "");
     state.lanURL = data.lanURL || "";
+    state.lanURLs =
+      Array.isArray(data.lanURLs) && data.lanURLs.length
+        ? data.lanURLs
+        : data.lanURL
+          ? [data.lanURL]
+          : [];
     state.port = data.port || 0;
     state.calMonth = state.today;
     state.exportStart = state.weekStart;
@@ -817,6 +823,21 @@
               <p class="hint-text">
                 同じ Wi-Fi（LAN）につないだ iPad / iPhone / 他のPCで、上のURLを開くか、左のQRコードをカメラで読み取ってください。<br>
                 このPCのアプリを起動したままにしておけば、どの端末からでも同じデータを編集できます。
+              </p>
+              ${
+                state.lanURLs && state.lanURLs.filter((u) => u !== state.lanURL).length
+                  ? `<p class="hint-text" style="margin-top:10px">
+                      つながらない時は、こちらのアドレスも試してください：<br>
+                      ${state.lanURLs
+                        .filter((u) => u !== state.lanURL)
+                        .map((u) => `<code>${escapeHtml(u)}</code>`)
+                        .join("<br>")}
+                    </p>`
+                  : ""
+              }
+              <p class="hint-text" style="margin-top:10px">
+                📱 スマホで開けない時は、PC側で Windows の「許可」が必要なことがあります。<br>
+                その場合は同じフォルダの「ファイアウォール許可.bat」を<b>右クリック→「管理者として実行」</b>してください（初回だけ）。
               </p>
             </div>
           </div>

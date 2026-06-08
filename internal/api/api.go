@@ -16,19 +16,21 @@ import (
 // Server は HTTP ハンドラ群をまとめる。
 type Server struct {
 	st      *store.Store
-	webFS   fs.FS  // web ディレクトリ（fs.Sub 済み）
-	port    int    // 実際に listen しているポート
-	lanURL  string // LAN 用 URL（http://<ip>:<port>）
+	webFS   fs.FS    // web ディレクトリ（fs.Sub 済み）
+	port    int      // 実際に listen しているポート
+	lanURL  string   // LAN 用 URL（最有力。http://<ip>:<port>）
+	lanURLs []string // 接続候補 URL すべて（つながらない時のフォールバック表示用）
 	fileSrv http.Handler
 }
 
 // New は API サーバを生成する。webFS は web 配下を指す（fs.Sub の結果）。
-func New(st *store.Store, webFS fs.FS, port int, lanURL string) *Server {
+func New(st *store.Store, webFS fs.FS, port int, lanURL string, lanURLs []string) *Server {
 	return &Server{
 		st:      st,
 		webFS:   webFS,
 		port:    port,
 		lanURL:  lanURL,
+		lanURLs: lanURLs,
 		fileSrv: http.FileServer(http.FS(webFS)),
 	}
 }
@@ -127,6 +129,7 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		"weekStart": b.WeekStart,
 		"port":      s.port,
 		"lanURL":    s.lanURL,
+		"lanURLs":   s.lanURLs,
 	})
 }
 
