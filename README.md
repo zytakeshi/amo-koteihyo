@@ -21,7 +21,7 @@ Go 1.26 以上が必要です。
 bash build/build-windows.sh
 ```
 
-生成物: `build/AMO工程表.exe`
+生成物: `build/AMO-koteihyo.exe`
 これを Windows PC にコピーして使います。
 
 ### この端末用にビルドする
@@ -34,7 +34,7 @@ go build -o koteihyo .
 
 ### Windows
 
-`AMO工程表.exe` をダブルクリックします。
+`AMO-koteihyo.exe` をダブルクリックします。
 黒いコンソール画面に接続 URL が表示されます（このウィンドウは閉じないでください）。
 既定ブラウザが自動で開きます。
 
@@ -70,7 +70,7 @@ iPad / iPhone はこの URL を開くか、画面の QR コードを読み込ん
 
 ## はじめての設定（Windows）
 
-1. `AMO工程表.exe` をデスクトップなど分かりやすい場所に置いてダブルクリック。
+1. `AMO-koteihyo.exe` をデスクトップなど分かりやすい場所に置いてダブルクリック。
 2. 初回に Windows ファイアウォールの確認が出たら **「アクセスを許可」** を押す
    （iPad / iPhone から接続するために必要）。
 3. アプリ右上の **「接続」** に表示される URL / QR コードを iPad・iPhone で開く
@@ -78,7 +78,7 @@ iPad / iPhone はこの URL を開くか、画面の QR コードを読み込ん
 
 ## PC を買い替えたとき（データ移行）
 
-新しい PC に `AMO工程表.exe` を置き、旧 PC の `data\koteihyo.json` を
+新しい PC に `AMO-koteihyo.exe` を置き、旧 PC の `data\koteihyo.json` を
 **新 PC の exe と同じ場所の `data\` フォルダ**にコピーするだけで、全データが移ります。
 
 ## 詳しい使い方（スタッフ向け）
