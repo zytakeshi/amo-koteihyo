@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"koteihyo/internal/store"
+	"koteihyo/internal/update"
 )
 
 // Server は HTTP ハンドラ群をまとめる。
@@ -20,17 +23,22 @@ type Server struct {
 	port    int      // 実際に listen しているポート
 	lanURL  string   // LAN 用 URL（最有力。http://<ip>:<port>）
 	lanURLs []string // 接続候補 URL すべて（つながらない時のフォールバック表示用）
+	version string   // アプリ版（§B、bootstrap で配る）
+	mgr     *update.Manager
 	fileSrv http.Handler
 }
 
 // New は API サーバを生成する。webFS は web 配下を指す（fs.Sub の結果）。
-func New(st *store.Store, webFS fs.FS, port int, lanURL string, lanURLs []string) *Server {
+// version はアプリ版（ldflags 埋め込み）、mgr は自動アップデート管理（nil 可＝テスト）。
+func New(st *store.Store, webFS fs.FS, port int, lanURL string, lanURLs []string, version string, mgr *update.Manager) *Server {
 	return &Server{
 		st:      st,
 		webFS:   webFS,
 		port:    port,
 		lanURL:  lanURL,
 		lanURLs: lanURLs,
+		version: version,
+		mgr:     mgr,
 		fileSrv: http.FileServer(http.FS(webFS)),
 	}
 }
@@ -56,6 +64,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/staff", s.handleStaff)
 	mux.HandleFunc("/api/staff/delete", s.handleStaffDelete)
 	mux.HandleFunc("/api/staff/reorder", s.handleStaffReorder)
+
+	// タイムカード（§A7）。
+	mux.HandleFunc("/api/timecard/today", s.handleTimecardToday)
+	mux.HandleFunc("/api/timecard/punch", s.handleTimecardPunch)
+	mux.HandleFunc("/api/timecard/month", s.handleTimecardMonth)
+	mux.HandleFunc("/api/timecard/day", s.handleTimecardDay)
+	mux.HandleFunc("/api/timecard/export.csv", s.handleTimecardExportCSV)
+	mux.HandleFunc("/api/timecard/config", s.handleTimecardConfig)
+
+	// 自動アップデート（§B）。
+	mux.HandleFunc("/api/update/status", s.handleUpdateStatus)
+	mux.HandleFunc("/api/update/apply", s.handleUpdateApply)
 
 	// 静的配信（"/" → index.html、その他 web 配下）。
 	mux.HandleFunc("/", s.handleStatic)
@@ -122,7 +142,14 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b := s.st.Bootstrap()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	// 応答本体を「書き切れたことを確認」してから .old 後始末を合図する（finding 10）。
+	// エンコード/書込に失敗したら合図しない（クライアントは版一致を確認できないため、
+	// 旧 exe を消してはならない）。
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(map[string]interface{}{
 		"staff":     b.Staff,
 		"processes": b.Processes,
 		"today":     b.Today,
@@ -130,7 +157,22 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		"port":      s.port,
 		"lanURL":    s.lanURL,
 		"lanURLs":   s.lanURLs,
-	})
+		// タイムカード設定（設定画面は bootstrap から読む — §A7）。
+		"tcConfig": s.st.TimecardConfig(),
+		// アプリ版（§B。更新バナー／再起動後の版一致判定に使う）。
+		"version": s.version,
+	}); err != nil {
+		// 書き切れていない → 後始末は合図しない（次回の bootstrap 200 で再試行）。
+		return
+	}
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	// 再起動モードで最初の bootstrap 200 応答後、条件が揃えば旧 exe を後始末する
+	// （§B3.4、sync.Once で一度きり）。
+	if s.mgr != nil {
+		s.mgr.NotifyBootstrapServed()
+	}
 }
 
 // ---- /api/week ----
@@ -285,7 +327,8 @@ func (s *Server) handleRevert(w http.ResponseWriter, r *http.Request) {
 	}
 	count, canUndo, canRedo, err := s.st.Revert(req.EventID)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		// 未知/欠落 ID（ValidationError）→ 400、復号破損・保存失敗 → 500（finding 6）。
+		writeTimecardErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -490,4 +533,308 @@ func (s *Server) handleStaffReorder(w http.ResponseWriter, r *http.Request) {
 	}
 	cu, cr := s.st.CanUndoRedo()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "canUndo": cu, "canRedo": cr})
+}
+
+// ---- タイムカード（§A7） ----
+
+// writeTimecardErr はストアの型付きエラーを §A7 のエラー分類で振り分ける。
+//
+//	*store.ConflictError（= sentinel ErrConflict）→ 409（currentDay/currentRev 同送）
+//	*store.ValidationError                        → 400
+//	その他（復号破損・保存失敗）                  → 500
+func writeTimecardErr(w http.ResponseWriter, err error) {
+	var ce *store.ConflictError
+	if errors.As(err, &ce) {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error": ce.Error(),
+			// currentDay も API DTO（attendanceNote）で返す（finding 13）。
+			"currentDay": store.NewDayDTO(ce.CurrentDay),
+			"currentRev": ce.CurrentRev,
+		})
+		return
+	}
+	var ve *store.ValidationError
+	if errors.As(err, &ve) {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeErr(w, http.StatusInternalServerError, err.Error())
+}
+
+// ---- /api/timecard/today ----
+
+func (s *Server) handleTimecardToday(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	data, err := s.st.TimecardToday()
+	if err != nil {
+		writeTimecardErr(w, err)
+		return
+	}
+	// TCTodayData は canUndo/canRedo を含む平坦な構造。
+	writeJSON(w, http.StatusOK, data)
+}
+
+// ---- /api/timecard/punch ----
+
+func (s *Server) handleTimecardPunch(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		StaffID string `json:"staffId"`
+		Action  string `json:"action"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	res, err := s.st.Punch(req.StaffID, req.Action)
+	if err != nil {
+		writeTimecardErr(w, err)
+		return
+	}
+	cu, cr := s.st.CanUndoRedo()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"day":     store.NewDayDTO(res.Day), // API DTO（attendanceNote）、finding 13。
+		"state":   res.State,
+		"rev":     res.Rev,
+		"canUndo": cu,
+		"canRedo": cr,
+	})
+}
+
+// ---- /api/timecard/month ----
+
+func (s *Server) handleTimecardMonth(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	q := r.URL.Query()
+	staffID := q.Get("staffId")
+	month := q.Get("month")
+	data, err := s.st.TimecardMonth(staffID, month)
+	if err != nil {
+		writeTimecardErr(w, err)
+		return
+	}
+	// TCMonthData は roster/config/canUndo/canRedo を含む平坦な構造。
+	writeJSON(w, http.StatusOK, data)
+}
+
+// ---- /api/timecard/day ----
+
+func (s *Server) handleTimecardDay(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		StaffID        string            `json:"staffId"`
+		Date           string            `json:"date"`
+		In             string            `json:"in"`
+		Out            string            `json:"out"`
+		Breaks         []store.BreakSpan `json:"breaks"`
+		AttendanceNote string            `json:"attendanceNote"`
+		ExpectedRev    *int              `json:"expectedRev"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// expectedRev 欠落は必ず衝突扱い（§A10-9）: 実 rev は常に 0 以上なので、
+	// 番兵 -1 を渡すとストアが必ず 409（currentDay/currentRev 同送）を返す。
+	expected := -1
+	if req.ExpectedRev != nil {
+		expected = *req.ExpectedRev
+	}
+	res, err := s.st.TimecardDay(req.StaffID, req.Date, req.In, req.Out, req.Breaks, req.AttendanceNote, expected)
+	if err != nil {
+		writeTimecardErr(w, err)
+		return
+	}
+	cu, cr := s.st.CanUndoRedo()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"day":     store.NewDayDTO(res.Day), // API DTO（attendanceNote）、finding 13。
+		"rev":     res.Rev,
+		"canUndo": cu,
+		"canRedo": cr,
+	})
+}
+
+// ---- /api/timecard/config ----
+
+func (s *Server) handleTimecardConfig(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		RoundUnit       int    `json:"roundUnit"`
+		RoundDir        string `json:"roundDir"`
+		StandardMinutes int    `json:"standardMinutes"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cfg, err := s.st.TimecardConfigSet(req.RoundUnit, req.RoundDir, req.StandardMinutes)
+	if err != nil {
+		writeTimecardErr(w, err)
+		return
+	}
+	cu, cr := s.st.CanUndoRedo()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config":  cfg,
+		"canUndo": cu,
+		"canRedo": cr,
+	})
+}
+
+// ---- /api/timecard/export.csv ----
+
+func (s *Server) handleTimecardExportCSV(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	q := r.URL.Query()
+	month := q.Get("month")
+	staffID := q.Get("staffId") // 省略で全員（roster 順）。
+	data, err := s.st.TimecardExportData(month, staffID)
+	if err != nil {
+		writeTimecardErr(w, err)
+		return
+	}
+
+	// 参考（丸め）列は roundUnit==1 のとき列ごと省く（§A8）。
+	includeRef := data.RoundUnit != 1
+
+	var buf bytes.Buffer
+	// UTF-8 BOM（Excel が日本語を正しく開けるように）。
+	buf.Write([]byte{0xEF, 0xBB, 0xBF})
+	cw := csv.NewWriter(&buf)
+
+	// ヘッダ（§A8）。
+	header := []string{"スタッフ", "日付", "曜日", "出勤", "退勤", "休憩(分)", "実働", "実働(時間)"}
+	if includeRef {
+		header = append(header, "実働(丸め・参考)")
+	}
+	header = append(header, "所定超過(参考)", "備考", "フラグ")
+	_ = cw.Write(header)
+
+	for bi, block := range data.Staff {
+		if bi > 0 {
+			// スタッフブロックの区切り（空行）。
+			_ = cw.Write([]string{})
+		}
+		for _, d := range block.Days {
+			row := []string{
+				block.StaffName, // csvSafe 済み（store）。
+				d.Date,
+				d.Weekday,
+				d.In,
+				d.Out,
+				strconv.Itoa(d.BreakMinutes),
+				d.WorkedRaw,
+				d.WorkedDecimal,
+			}
+			if includeRef {
+				row = append(row, d.WorkedRef)
+			}
+			row = append(row, d.OverStd, d.Note /* csvSafe 済み */, d.Flags)
+			_ = cw.Write(row)
+		}
+		// 合計行（生ベース。参考列は空）。
+		total := []string{block.StaffName, "合計", "", "", "", "", block.TotalWorked, block.TotalDecimal}
+		if includeRef {
+			total = append(total, "")
+		}
+		total = append(total, "", block.TotalNoteText, "")
+		_ = cw.Write(total)
+	}
+
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "CSV生成に失敗しました")
+		return
+	}
+
+	filename := fmt.Sprintf("timecard_%s.csv", data.Month)
+	if staffID != "" {
+		filename = fmt.Sprintf("timecard_%s_%s.csv", data.Month, staffID)
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
+}
+
+// ---- 自動アップデート（§B） ----
+
+// handleUpdateStatus は現在の更新状態を返す（§B2）。lazy 確認は Manager 側で行う。
+func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.mgr == nil {
+		writeErr(w, http.StatusServiceUnavailable, "自動更新は利用できません")
+		return
+	}
+	writeJSON(w, http.StatusOK, s.mgr.Status())
+}
+
+// handleUpdateApply は更新を適用する（§B3）。Windows 以外・dev は 400。
+// ステージング（DL + sha256/MZ/サイズ検証）成功後、レスポンスを flush してから
+// main の apply チャネルへシグナルし、return する（返ったハンドラは flush 済み → 安全）。
+func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if runtime.GOOS != "windows" {
+		writeErr(w, http.StatusBadRequest, "手動で更新してください")
+		return
+	}
+	if s.mgr == nil {
+		writeErr(w, http.StatusServiceUnavailable, "自動更新は利用できません")
+		return
+	}
+	// ステージング前にファイアウォール修復ゲートを確保する（finding 2）。修復(UAC)が
+	// 進行中で時間内に確保できなければ busy を返し、更新 UI には入らない。応答後に main が
+	// この保持済みゲートに依存してスワップするため、成功時はここで解放しない
+	// （プロセスがスワップで終了する）。ステージング失敗時のみ解放する。
+	if !s.mgr.AcquireApplyGate(r.Context()) {
+		writeErr(w, http.StatusConflict, "ファイアウォール設定の確認中です。しばらくして再試行してください")
+		return
+	}
+	plan, newVersion, err := s.mgr.Stage()
+	if err != nil {
+		s.mgr.ReleaseFirewallGate() // 失敗 → 保持ゲートを解放（修復の再試行を妨げない）。
+		if errors.Is(err, update.ErrApplyInProgress) {
+			writeErr(w, http.StatusConflict, err.Error())
+			return
+		}
+		var nae *update.NotApplicableError
+		if errors.As(err, &nae) {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		// ダウンロード/検証の失敗など → 500。
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// レスポンスを書いて flush → その後にシグナル → return（§B3-2）。
+	// ゲートは保持したまま（main がスワップ、finding 2）。
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(map[string]interface{}{
+		"ok":         true,
+		"restarting": true,
+		"newVersion": newVersion,
+	})
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	s.mgr.Signal(plan)
 }

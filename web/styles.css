@@ -1013,14 +1013,14 @@ p {
 
   .nav-actions {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
   }
 
   .nav-actions .btn {
     min-width: 0;
-    padding: 0 8px;
-    font-size: 13px;
+    padding: 0 6px;
+    font-size: 12px;
   }
 
   .connect-wrap {
@@ -1064,6 +1064,16 @@ p {
     grid-template-columns: 1fr 1fr;
   }
 
+  /* iPhone (390px): 5 nav buttons wrap 3+2, each stays ≥44px tap height. */
+  .nav-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .nav-actions .btn {
+    font-size: 13px;
+    padding: 0 8px;
+  }
+
   /* iPhone (390px): keep 前週 / 週範囲 / 次週 / 今週 all on-screen */
   .week-nav {
     gap: 8px;
@@ -1102,9 +1112,385 @@ p {
   }
 }
 
+/* ---------- Timecard ---------- */
+.tc-subtabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* --- 打刻 (punch) --- */
+.tc-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 0 18px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+
+.tc-clock-date {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 3vw, 24px);
+  font-weight: 900;
+}
+
+.tc-clock-time {
+  font-family: var(--font-display);
+  font-size: clamp(44px, 11vw, 76px);
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.tc-anomaly {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--rose);
+  border-radius: var(--radius);
+  background: oklch(96% 0.04 10);
+  color: var(--rose-deep);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.5;
+}
+
+.tc-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+
+.tc-card {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+
+.tc-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.tc-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.tc-badge {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+  background: var(--paper-2);
+  color: var(--muted);
+}
+
+.tc-badge.is-working {
+  background: var(--mint);
+  color: var(--green-deep);
+}
+
+.tc-badge.is-break {
+  background: oklch(90% 0.06 74);
+  color: oklch(40% 0.09 74);
+}
+
+.tc-badge.is-done {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.tc-badge.is-carry,
+.tc-badge.is-invalid {
+  background: oklch(90% 0.06 12);
+  color: var(--rose-deep);
+}
+
+.tc-summary {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tc-punch-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tc-punch-btn {
+  flex: 1 1 auto;
+  min-height: 64px;
+  font-size: 18px;
+}
+
+.tc-locked {
+  margin: 6px 0 0;
+  color: var(--rose-deep);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+/* --- 月次 (month) --- */
+.tc-inactive-badge {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--rose-deep);
+  font-size: 11px;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
+.staff-tab.is-active .tc-inactive-badge {
+  background: oklch(40% 0.02 60);
+  color: var(--paper);
+}
+
+.tc-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--rose);
+  border-radius: var(--radius);
+  background: oklch(96% 0.04 10);
+  font-weight: 900;
+  color: var(--rose-deep);
+}
+
+.tc-month-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.tc-month-table th,
+.tc-month-table td {
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+  text-align: center;
+  padding: 8px 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tc-month-table thead th {
+  border-top: 1px solid var(--line);
+  background: var(--paper-2);
+  font-size: 12px;
+}
+
+.tc-month-table th:first-child,
+.tc-month-table td:first-child {
+  border-left: 1px solid var(--line);
+}
+
+.tc-month-table td.is-sun,
+.tc-month-table tr.is-sun td:first-child {
+  color: var(--rose-deep);
+}
+
+.tc-month-table td.is-sat,
+.tc-month-table tr.is-sat td:first-child {
+  color: var(--green-deep);
+}
+
+.tc-month-table tr.is-editing > td {
+  background: oklch(96% 0.04 10);
+}
+
+.tc-month-table small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tc-warn {
+  color: var(--rose-deep);
+  font-weight: 900;
+}
+
+.tc-edit-btn {
+  min-height: 36px;
+  width: 40px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper-2);
+  font-size: 15px;
+}
+
+.tc-month-footer {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-2);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.tc-editor {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  text-align: left;
+}
+
+.tc-edit-times,
+.tc-break-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.tc-editor label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 900;
+  font-size: 13px;
+}
+
+.tc-editor input[type="time"] {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+
+.tc-breaks {
+  display: grid;
+  gap: 8px;
+}
+
+.tc-note-label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.tc-note-label textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.tc-edit-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* --- settings panel --- */
+.tc-settings {
+  display: grid;
+  gap: 12px;
+}
+
+.tc-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tc-settings-row > label {
+  flex: 0 0 auto;
+  min-width: 140px;
+  font-weight: 900;
+}
+
+.tc-settings-row select {
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+  font-weight: 700;
+}
+
+.tc-std-inputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 900;
+}
+
+.tc-std-inputs input[type="number"] {
+  width: 74px;
+  min-height: 48px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 560px) {
+  .tc-punch-btn {
+    min-height: 64px;
+    font-size: 17px;
+  }
+}
+
 @media print {
+  /* 月次タイムカードは A4 縦で印刷する（finding 16）。 */
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
   body {
     background: #fff;
+  }
+
+  /* 月次表のページ跨ぎ制御: 行は分割せず、ヘッダは各ページで繰り返す。 */
+  .tc-month-table {
+    page-break-inside: auto;
+  }
+
+  .tc-month-table tr {
+    page-break-inside: avoid;
+  }
+
+  .tc-month-table thead {
+    display: table-header-group;
+  }
+
+  .tc-month-table tfoot {
+    display: table-footer-group;
   }
 
   .topbar,
@@ -1119,7 +1505,12 @@ p {
   .reorder-controls,
   .row-actions,
   .step-btn,
-  .toast {
+  .toast,
+  .tc-subtabs,
+  .tc-confirm,
+  .tc-edit-btn,
+  .tc-edit-row,
+  .update-banner {
     display: none !important;
   }
 
@@ -1127,4 +1518,97 @@ p {
     box-shadow: none;
     border-color: #999;
   }
+}
+
+/* ============================================================
+ * 自動アップデート（§B）: バナー・確認・更新中フルスクリーン
+ * ========================================================== */
+.update-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--rose);
+  border-radius: var(--radius);
+  background: var(--mint);
+  box-shadow: var(--shadow);
+}
+
+.update-banner.is-confirm {
+  background: var(--paper-2);
+  border-color: var(--brass);
+}
+
+.update-banner-text {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.update-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 更新中フルスクリーン */
+.update-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--paper);
+}
+
+.update-screen-box {
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  padding: 32px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+
+.update-screen-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+
+.update-screen-msg {
+  color: var(--muted);
+  line-height: 1.7;
+  margin-bottom: 20px;
+}
+
+.update-screen-spinner {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 20px;
+  border: 4px solid var(--line);
+  border-top-color: var(--rose);
+  border-radius: 50%;
+  animation: update-spin 0.9s linear infinite;
+}
+
+@keyframes update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.app-version {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 8px;
 }

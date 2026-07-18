@@ -111,6 +111,28 @@
     // settings export range
     exportStart: "",
     exportEnd: "",
+
+    // ---- timecard ----
+    timecardTab: "punch", // punch | month
+    tcToday: null, // /api/timecard/today response
+    tcMonth: null, // /api/timecard/month response
+    tcMonthStaffId: "",
+    tcMonthYM: "", // "YYYY-MM"
+    tcEditDraft: null, // { date, in, out, breaks:[{start,end}], attendanceNote, expectedRev }
+    tcEditDirty: false,
+    tcClockAnchor: null, // { serverMs, perf }
+    tcConfig: null, // { roundUnit, roundDir, standardMinutes } from bootstrap/config
+    tcConfirmOpen: false, // inline 破棄 confirm bar
+    tcPending: null, // deferred draft-destroying action (run on 破棄)
+
+    // ---- 自動アップデート（§B） ----
+    version: "", // running app version (bootstrap)
+    updateStatus: null, // /api/update/status: { current, latest, available, notes, phase, canApply }
+    updateDismissed: false, // session-only 「あとで」
+    updateConfirmOpen: false, // inline 更新確認バー
+    updating: false, // 更新中フルスクリーン
+    updateTarget: "", // newVersion being applied (poll bootstrap.version == this)
+    updateTimedOut: false, // restart poll exceeded 90s
   };
 
   const root = document.querySelector("#app");
@@ -146,6 +168,26 @@
 
   function get(path) {
     return api(path, { method: "GET" });
+  }
+
+  // POST that surfaces the raw status + parsed body (never throws on non-2xx),
+  // so callers can branch on 409 vs 400 (timecard 打刻修正 optimistic-concurrency).
+  async function postRaw(path, payload) {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
+    let body = null;
+    const text = await res.text();
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch (e) {
+        body = null;
+      }
+    }
+    return { ok: res.ok, status: res.status, body };
   }
 
   // Track undo/redo flags from any mutating response.
@@ -218,6 +260,8 @@
           ? [data.lanURL]
           : [];
     state.port = data.port || 0;
+    state.version = data.version || "";
+    state.tcConfig = data.tcConfig || { roundUnit: 1, roundDir: "floor", standardMinutes: 480 };
     state.calMonth = state.today;
     state.exportStart = state.weekStart;
     state.exportEnd = addDays(state.weekStart, 6);
@@ -262,7 +306,7 @@
       days.forEach((day) => {
         if (!day.date) return;
         const hasInput = (day.events || []).some((e) =>
-          ["count_inc", "count_dec", "count_set", "memo_set"].includes(e.kind)
+          ["count_inc", "count_dec", "count_set", "memo_set", "tc_set"].includes(e.kind)
         );
         state.monthMarks[day.date] = {
           hist: true,
@@ -273,6 +317,36 @@
     } catch (e) {
       // Non-fatal: dots are a nicety.
       console.warn("month marks load failed", e);
+    }
+  }
+
+  // 自動アップデートの状態を取得（§B2）。非致命: 失敗しても黙って据え置く。
+  async function loadUpdateStatus() {
+    try {
+      const data = await get("/api/update/status");
+      state.updateStatus = data || null;
+    } catch (e) {
+      // 更新確認はおまけ。失敗しても本体機能に影響させない。
+    }
+  }
+
+  // 起動直後の非同期確認（サーバ側 goroutine）が終わるまで数回だけ再取得する。
+  // これによりリロード無しでバナーが出る（§B2/§B5、finding 5）。phase が "checking"
+  // か latest 未取得の間だけ、指数バックオフで最大 retries 回ポーリングする。
+  let updateStatusPolling = false;
+  async function refreshUpdateStatus(retries) {
+    if (updateStatusPolling) return;
+    updateStatusPolling = true;
+    try {
+      await loadUpdateStatus();
+    } finally {
+      updateStatusPolling = false;
+    }
+    if (state.view === "calendar") render();
+    const u = state.updateStatus;
+    const pending = !u || u.phase === "checking" || (!u.available && !u.latest);
+    if (pending && retries > 0) {
+      setTimeout(() => refreshUpdateStatus(retries - 1), 2000);
     }
   }
 
@@ -300,9 +374,18 @@
       await safe(loadHistory);
     } else if (view === "calendar") {
       await safe(loadMonthMarks);
+      // 更新バナーはカレンダー画面に出す（§B2）。確認は非ブロッキング + 起動確認が
+      // まだ走っている場合の再取得（finding 5）。
+      refreshUpdateStatus(3);
+    } else if (view === "timecard") {
+      if (state.timecardTab === "month") {
+        await safe(loadTCMonth);
+      } else {
+        await safe(loadTCToday);
+      }
     }
     render();
-    // Poll only while a multi-device-sensitive view (grid/history) is showing.
+    // Poll only while a multi-device-sensitive view (grid/history/timecard) is showing.
     syncPolling();
   }
 
@@ -332,6 +415,7 @@
           <button class="btn ${state.view === "calendar" ? "btn-ink" : "btn-ghost"}" data-action="nav" data-view="calendar" type="button">カレンダー</button>
           <button class="btn ${state.view === "history" ? "btn-ink" : "btn-ghost"}" data-action="nav" data-view="history" type="button">履歴</button>
           <button class="btn ${state.view === "settings" ? "btn-ink" : "btn-ghost"}" data-action="nav" data-view="settings" type="button">設定</button>
+          <button class="btn ${state.view === "timecard" ? "btn-ink" : "btn-ghost"}" data-action="nav" data-view="timecard" type="button">タイムカード</button>
           <button class="btn ${state.view === "connect" ? "btn-ink" : "btn-ghost"}" data-action="nav" data-view="connect" type="button">接続</button>
         </nav>
       </header>
@@ -353,6 +437,65 @@
   /* ============================================================
    * View: Calendar (home)
    * ========================================================== */
+  // 更新バナー（§B2）: canApply=true → 今すぐ更新、false → 手動ダウンロード。
+  // 更新確認中は inline 確認バーに差し替える（アプリに window.confirm は無い方針）。
+  function renderUpdateBanner() {
+    const u = state.updateStatus;
+    if (!u || !u.available || state.updateDismissed) return "";
+    const ver = escapeHtml(u.latest || "");
+    if (state.updateConfirmOpen) {
+      return `
+        <div class="update-banner is-confirm">
+          <span class="update-banner-text">更新するとアプリが再起動します。接続中の全員が約10秒つながらなくなります。よろしいですか？</span>
+          <span class="update-banner-actions">
+            <button class="btn btn-rose btn-sm" data-action="update-confirm" type="button">更新する</button>
+            <button class="btn btn-ghost btn-sm" data-action="update-cancel" type="button">キャンセル</button>
+          </span>
+        </div>`;
+    }
+    if (u.canApply) {
+      return `
+        <div class="update-banner">
+          <span class="update-banner-text">新しいバージョン ${ver} があります</span>
+          <span class="update-banner-actions">
+            <button class="btn btn-rose btn-sm" data-action="update-apply" type="button">今すぐ更新</button>
+            <button class="btn btn-ghost btn-sm" data-action="update-dismiss" type="button">あとで</button>
+          </span>
+        </div>`;
+    }
+    // 手動更新（読取専用フォルダ設置 / 開発ビルド / mac）。
+    return `
+      <div class="update-banner">
+        <span class="update-banner-text">新しいバージョン ${ver} があります（手動更新）</span>
+        <span class="update-banner-actions">
+          <a class="btn btn-ink btn-sm" href="https://github.com/zytakeshi/amo-koteihyo/releases/latest" target="_blank" rel="noopener">ダウンロード</a>
+          <button class="btn btn-ghost btn-sm" data-action="update-dismiss" type="button">あとで</button>
+        </span>
+      </div>`;
+  }
+
+  // 更新中フルスクリーン（§B3 step 5）。bootstrap.version==newVersion まで待つ。
+  function renderUpdatingScreen() {
+    if (state.updateTimedOut) {
+      return `
+        <div class="update-screen">
+          <div class="update-screen-box">
+            <div class="update-screen-title">更新の確認に時間がかかっています</div>
+            <div class="update-screen-msg">PCの黒い画面（コンソール）を確認してください。<br>問題がなければ下のボタンで再読み込みしてください。</div>
+            <button class="btn btn-rose" data-action="update-reload" type="button">再読み込み</button>
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="update-screen">
+        <div class="update-screen-box">
+          <div class="update-screen-spinner" aria-hidden="true"></div>
+          <div class="update-screen-title">更新中… そのままお待ちください</div>
+          <div class="update-screen-msg">新しいバージョン ${escapeHtml(state.updateTarget || "")} に更新しています。<br>アプリが自動で再起動します（約10秒）。</div>
+        </div>
+      </div>`;
+  }
+
   function renderCalendarView() {
     const base = parseDate(state.calMonth || state.today);
     const year = base.getFullYear();
@@ -389,6 +532,7 @@
     return `
       ${renderTopbar()}
       <main>
+        ${renderUpdateBanner()}
         <section class="panel">
           <div class="cal-nav">
             <button class="btn btn-ghost" data-action="cal-prev" type="button" aria-label="前の月">◀ 前月</button>
@@ -785,6 +929,8 @@
           </div>
         </section>
 
+        ${renderTimecardSettings()}
+
         <section class="panel">
           <div class="section-heading"><h2>書き出し・印刷</h2></div>
           <div class="export-range">
@@ -797,7 +943,61 @@
           </div>
           <p class="hint-text">CSV は UTF-8（BOM付）。Excel でそのまま開けます。期間内の工程別・スタッフ別の集計を出力します。</p>
         </section>
+
+        <p class="app-version">バージョン ${escapeHtml(state.version || "不明")}</p>
       </main>
+    `;
+  }
+
+  // タイムカード設定パネル（設定画面内）。
+  function renderTimecardSettings() {
+    const cfg = state.tcConfig || { roundUnit: 1, roundDir: "floor", standardMinutes: 480 };
+    const unitOpts = [
+      [1, "なし"],
+      [5, "5分"],
+      [10, "10分"],
+      [15, "15分"],
+      [30, "30分"],
+    ]
+      .map(
+        ([v, lbl]) =>
+          `<option value="${v}" ${Number(cfg.roundUnit) === v ? "selected" : ""}>${lbl}</option>`
+      )
+      .join("");
+    const dirOpts = [
+      ["floor", "切り捨て"],
+      ["nearest", "四捨五入"],
+      ["ceil", "切り上げ"],
+    ]
+      .map(
+        ([v, lbl]) =>
+          `<option value="${v}" ${cfg.roundDir === v ? "selected" : ""}>${lbl}</option>`
+      )
+      .join("");
+    const stdH = Math.floor((Number(cfg.standardMinutes) || 0) / 60);
+    const stdM = (Number(cfg.standardMinutes) || 0) % 60;
+    return `
+      <section class="panel">
+        <div class="section-heading"><h2>タイムカード設定</h2></div>
+        <div class="tc-settings">
+          <div class="tc-settings-row">
+            <label for="tc-round-unit">丸め表示(参考)</label>
+            <select id="tc-round-unit" data-action="tc-cfg-round-unit">${unitOpts}</select>
+          </div>
+          <div class="tc-settings-row">
+            <label for="tc-round-dir">丸め方向</label>
+            <select id="tc-round-dir" data-action="tc-cfg-round-dir">${dirOpts}</select>
+          </div>
+          <div class="tc-settings-row">
+            <label>所定労働時間 /日</label>
+            <div class="tc-std-inputs">
+              <input type="number" inputmode="numeric" min="0" max="24" value="${stdH}" data-action="tc-cfg-std-hours" aria-label="所定労働時間（時）" /><span>時間</span>
+              <input type="number" inputmode="numeric" min="0" max="59" value="${stdM}" data-action="tc-cfg-std-min" aria-label="所定労働時間（分）" /><span>分</span>
+            </div>
+          </div>
+        </div>
+        <p class="hint-text">※給与計算は常に実測（丸めなし）の値を使用します。丸め表示・所定超過は参考です。</p>
+      </section>
     `;
   }
 
@@ -870,9 +1070,743 @@
   }
 
   /* ============================================================
+   * View: Timecard (打刻 / 月次)
+   * ========================================================== */
+
+  // "HH:MM" -> minutes since midnight.
+  function hmToMin(hhmm) {
+    const parts = String(hhmm || "").split(":");
+    const h = Number(parts[0]) || 0;
+    const m = Number(parts[1]) || 0;
+    return h * 60 + m;
+  }
+
+  // minutes -> "H:MM" (null/undefined -> "—").
+  function fmtMin(min) {
+    if (min == null) return "—";
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return `${h}:${pad2(m)}`;
+  }
+
+  // Sum of closed breaks (both start+end set), in minutes.
+  function breakMinutes(breaks) {
+    let sum = 0;
+    (breaks || []).forEach((b) => {
+      if (b && b.start && b.end) sum += hmToMin(b.end) - hmToMin(b.start);
+    });
+    return sum;
+  }
+
+  function tcYMLabel(ym) {
+    const p = String(ym || "").split("-");
+    return p.length === 2 ? `${p[0]}年${Number(p[1])}月` : ym;
+  }
+
+  // "YYYY-MM" arithmetic (delta in months).
+  function addYM(ym, delta) {
+    const p = String(ym || "").split("-");
+    let y = Number(p[0]) || 0;
+    let m = (Number(p[1]) || 1) + delta;
+    while (m < 1) {
+      m += 12;
+      y -= 1;
+    }
+    while (m > 12) {
+      m -= 12;
+      y += 1;
+    }
+    return `${y}-${pad2(m)}`;
+  }
+
+  /* ---- data loaders ---- */
+  async function loadTCToday() {
+    const data = await get("/api/timecard/today");
+    state.tcToday = data;
+    syncUndoFlags(data);
+    if (data && data.serverNow) {
+      const ms = new Date(data.serverNow).getTime();
+      if (!isNaN(ms)) {
+        state.tcClockAnchor = { serverMs: ms, perf: performance.now() };
+      }
+    }
+  }
+
+  function fetchTCMonth(sid, month) {
+    const q = `?staffId=${encodeURIComponent(sid)}&month=${encodeURIComponent(month)}`;
+    return get(`/api/timecard/month${q}`);
+  }
+
+  // Request-generation token so a slow response can't clobber a newer selection
+  // (poll vs navigation vs staff switch), finding 1.
+  let tcMonthReqSeq = 0;
+
+  async function loadTCMonth() {
+    if (!state.tcMonthYM) state.tcMonthYM = (state.today || "").slice(0, 7);
+    // 選択が空のときだけ先頭の active スタッフを既定にする。空でなければサーバの
+    // roster に検証を委ねる（退職者でも当月出勤があれば roster に載り選択可能、finding 2）。
+    let sid = state.tcMonthStaffId;
+    if (!sid) {
+      const first = activeStaff()[0];
+      sid = first ? first.id : "";
+    }
+    if (!sid) {
+      state.tcMonth = null;
+      state.tcMonthStaffId = "";
+      return;
+    }
+    const myReq = ++tcMonthReqSeq;
+    const month = state.tcMonthYM;
+    let data = await fetchTCMonth(sid, month);
+    if (myReq !== tcMonthReqSeq) return; // superseded by a newer load — drop it.
+    // 選択が返却 roster に含まれない場合（例: 当月出勤の無い退職者）だけ先頭へ退避する。
+    const roster = (data && data.roster) || [];
+    if (roster.length && !roster.some((r) => r.staffId === sid)) {
+      const fallback = roster.find((r) => !r.inactive) || roster[0];
+      if (fallback && fallback.staffId !== sid) {
+        sid = fallback.staffId;
+        data = await fetchTCMonth(sid, month);
+        if (myReq !== tcMonthReqSeq) return;
+      }
+    }
+    state.tcMonth = data;
+    state.tcMonthStaffId = sid;
+    state.tcMonthYM = month;
+    syncUndoFlags(data);
+  }
+
+  /* ---- server-anchored punch clock ---- */
+  let tcClockTimer = null;
+
+  function tickTCClock() {
+    const el = document.querySelector("#tc-clock-time");
+    if (!el || !state.tcClockAnchor) return;
+    const elapsed = performance.now() - state.tcClockAnchor.perf;
+    const now = new Date(state.tcClockAnchor.serverMs + elapsed);
+    el.textContent = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+  }
+
+  // Idempotent create/clear governed by the exact §A9 run-condition.
+  function syncTCClock() {
+    const shouldRun =
+      state.view === "timecard" && state.timecardTab === "punch" && !document.hidden;
+    if (shouldRun) {
+      if (!tcClockTimer) tcClockTimer = setInterval(tickTCClock, 1000);
+      tickTCClock();
+    } else if (tcClockTimer) {
+      clearInterval(tcClockTimer);
+      tcClockTimer = null;
+    }
+  }
+
+  /* ---- draft-protection guard ---- */
+  // Central guard: all draft-destroying actions route through interceptForDraft.
+  // While dirty, defer the action behind an inline 破棄 confirm bar.
+  const DRAFT_DESTROYERS = new Set([
+    "nav",
+    "tc-subtab",
+    "tc-roster",
+    "tc-month-prev",
+    "tc-month-next",
+    "tc-month-this",
+    "undo",
+    "redo",
+    "revert",
+    "tc-edit-open",
+  ]);
+
+  function interceptForDraft(action, target) {
+    if (!state.tcEditDirty) return false;
+    if (!DRAFT_DESTROYERS.has(action)) return false;
+    // Re-opening the SAME row's editor is not destructive.
+    if (
+      action === "tc-edit-open" &&
+      state.tcEditDraft &&
+      target.dataset.date === state.tcEditDraft.date
+    ) {
+      return false;
+    }
+    state.tcPending = () => dispatchClick(action, target);
+    state.tcConfirmOpen = true;
+    renderKeepingScroll();
+    return true;
+  }
+
+  function discardDraftAndContinue() {
+    state.tcEditDirty = false;
+    state.tcEditDraft = null;
+    state.tcConfirmOpen = false;
+    const fn = state.tcPending;
+    state.tcPending = null;
+    if (fn) fn();
+    else renderKeepingScroll();
+  }
+
+  function keepEditing() {
+    state.tcConfirmOpen = false;
+    state.tcPending = null;
+    renderKeepingScroll();
+  }
+
+  /* ---- master view ---- */
+  function renderTimecardView() {
+    const sub = state.timecardTab === "month" ? renderTCMonth() : renderTCPunch();
+    return `
+      ${renderTopbar()}
+      <main>
+        <div class="action-bar">
+          <div class="group">
+            <button class="btn btn-ghost" data-action="nav" data-view="calendar" type="button" title="カレンダー画面へ戻る">← 戻る</button>
+          </div>
+          ${renderUndoRedo()}
+        </div>
+
+        <div class="tc-subtabs" role="tablist" aria-label="タイムカード切替">
+          <button class="staff-tab ${state.timecardTab === "punch" ? "is-active" : ""}" data-action="tc-subtab" data-tab="punch" type="button" role="tab" aria-selected="${state.timecardTab === "punch"}">打刻</button>
+          <button class="staff-tab ${state.timecardTab === "month" ? "is-active" : ""}" data-action="tc-subtab" data-tab="month" type="button" role="tab" aria-selected="${state.timecardTab === "month"}">月次</button>
+        </div>
+
+        ${sub}
+      </main>
+    `;
+  }
+
+  /* ---- 打刻 screen ---- */
+  const TC_STATE_META = {
+    off: { badge: "未出勤", cls: "is-off" },
+    working: { badge: "勤務中", cls: "is-working" },
+    break: { badge: "休憩中", cls: "is-break" },
+    done: { badge: "退勤済", cls: "is-done" },
+    carryover: { badge: "勤務中(前日)", cls: "is-carry" },
+    carryover_break: { badge: "休憩中(前日)", cls: "is-carry" },
+    invalid: { badge: "要確認", cls: "is-invalid" },
+  };
+
+  function tcBadgeText(st) {
+    const lastBreak = (st.breaks || []).slice(-1)[0];
+    switch (st.state) {
+      case "working":
+        return `勤務中 ${st.in || ""}〜`;
+      case "break":
+        return `休憩中 ${lastBreak && lastBreak.start ? lastBreak.start : ""}〜`;
+      case "done":
+        return `退勤済 ${st.out || ""}`;
+      case "carryover":
+        return "勤務中(前日)";
+      case "carryover_break":
+        return "休憩中(前日)";
+      case "invalid":
+        return "要確認";
+      default:
+        return "未出勤";
+    }
+  }
+
+  function tcPunchSummary(st) {
+    const parts = [];
+    if (st.in) parts.push(`出 ${st.in}`);
+    const closed = (st.breaks || []).filter((b) => b.start && b.end).length;
+    if (closed) parts.push(`休憩${closed}回`);
+    if (st.out) parts.push(`退 ${st.out}`);
+    return parts.join("　");
+  }
+
+  function tcPunchButtons(st) {
+    const btn = (action, label, cls) =>
+      `<button class="btn ${cls} tc-punch-btn" data-action="tc-punch" data-staff-id="${escapeHtml(st.staffId)}" data-punch="${action}" type="button">${label}</button>`;
+    switch (st.state) {
+      case "off":
+        return btn("in", "出勤", "btn-rose");
+      case "working":
+        return btn("break_start", "休憩開始", "btn-soft") + btn("out", "退勤", "btn-ink");
+      case "break":
+        return btn("break_end", "休憩終了", "btn-soft");
+      case "carryover":
+        return btn("out", "退勤（前日分）", "btn-ink");
+      default:
+        return "";
+    }
+  }
+
+  function tcLockedNote(st) {
+    if (st.state === "carryover_break") {
+      return `<p class="tc-locked">前日の休憩が終了していません。月次画面の打刻修正で直してください。</p>`;
+    }
+    if (st.state === "invalid") {
+      return `<p class="tc-locked">打刻データに不整合があります。月次画面の打刻修正で確認してください。</p>`;
+    }
+    if (st.state === "done") {
+      return `<p class="tc-locked">本日は退勤済みです。（再出勤は月次の打刻修正で）</p>`;
+    }
+    return "";
+  }
+
+  function tcAnomalyText(a) {
+    const name = a.staffName || staffName(a.staffId) || "";
+    const md = shortMD(a.date);
+    switch (a.kind) {
+      case "退勤忘れ":
+        return `⚠ ${md} ${name}さんの退勤打刻がありません`;
+      case "休憩閉じ忘れ":
+        return `⚠ ${md} ${name}さんの休憩が終了していません`;
+      case "midnight_clamped":
+        return `⚠ ${md} ${name}さんの退勤が日をまたいだ可能性があります（要確認）`;
+      case "clock_warp":
+        return `⚠ ${md} ${name}さんの打刻時刻を自動補正しました（要確認）`;
+      case "invalid":
+        return `⚠ ${md} ${name}さんの打刻データに不整合があります（打刻修正で確認）`;
+      default:
+        return `⚠ ${md} ${name}さん（${escapeHtml(a.kind)}）`;
+    }
+  }
+
+  function renderTCPunch() {
+    const tc = state.tcToday;
+    if (!tc) {
+      return `<section class="panel"><div class="empty-state">読み込み中…</div></section>`;
+    }
+    const dateLabel = tc.date
+      ? `${parseDate(tc.date).getMonth() + 1}月${parseDate(tc.date).getDate()}日(${wdOf(tc.date)})`
+      : "";
+
+    const anomalies = tc.anomalies || [];
+    const banner = anomalies.length
+      ? `<div class="tc-anomaly">${anomalies.map((a) => `<span>${escapeHtml(tcAnomalyText(a))}</span>`).join("")}</div>`
+      : "";
+
+    const staff = tc.staff || [];
+    const cards = staff.length
+      ? staff
+          .map((st) => {
+            const meta = TC_STATE_META[st.state] || TC_STATE_META.off;
+            const buttons = tcPunchButtons(st);
+            const locked = tcLockedNote(st);
+            const summary = tcPunchSummary(st);
+            return `
+              <div class="tc-card">
+                <div class="tc-card-head">
+                  <strong class="tc-name">${escapeHtml(st.name)}</strong>
+                  <span class="tc-badge ${meta.cls}">${escapeHtml(tcBadgeText(st))}</span>
+                </div>
+                ${summary ? `<div class="tc-summary">${escapeHtml(summary)}</div>` : ""}
+                ${buttons ? `<div class="tc-punch-actions">${buttons}</div>` : ""}
+                ${locked}
+              </div>
+            `;
+          })
+          .join("")
+      : `<div class="empty-state">スタッフがいません。<br>「設定」からスタッフを追加してください。</div>`;
+
+    return `
+      <section class="panel">
+        <div class="tc-clock">
+          <span class="tc-clock-date">${escapeHtml(dateLabel)}</span>
+          <span class="tc-clock-time" id="tc-clock-time">--:--:--</span>
+        </div>
+        ${banner}
+        <div class="tc-cards">
+          ${cards}
+        </div>
+      </section>
+    `;
+  }
+
+  /* ---- 月次 screen ---- */
+  function renderTCMonth() {
+    const roster = (state.tcMonth && state.tcMonth.roster) || [];
+    const staffEmpty = activeStaff().length === 0 && roster.length === 0;
+    if (staffEmpty) {
+      return `<section class="panel"><div class="empty-state">スタッフがいません。<br>「設定」からスタッフを追加してください。</div></section>`;
+    }
+
+    const rosterTabs = roster
+      .map((r) => {
+        const active = r.staffId === state.tcMonthStaffId ? "is-active" : "";
+        const badge = r.inactive ? `<span class="tc-inactive-badge">退職/無効</span>` : "";
+        return `<button class="staff-tab ${active}" data-action="tc-roster" data-staff-id="${escapeHtml(r.staffId)}" type="button" role="tab" aria-selected="${r.staffId === state.tcMonthStaffId}">${escapeHtml(r.name)}${badge}</button>`;
+      })
+      .join("");
+
+    const confirmBar = state.tcConfirmOpen
+      ? `<div class="tc-confirm">編集中の内容を破棄しますか？
+          <button class="btn btn-danger btn-sm" data-action="tc-discard" type="button">破棄する</button>
+          <button class="btn btn-ghost btn-sm" data-action="tc-keep-editing" type="button">編集を続ける</button>
+        </div>`
+      : "";
+
+    return `
+      <div class="staff-tabs" role="tablist" aria-label="スタッフ切替">${rosterTabs || `<span class="tc-locked">対象スタッフがいません</span>`}</div>
+      ${confirmBar}
+      <div class="week-nav">
+        <button class="btn btn-ghost" data-action="tc-month-prev" type="button" aria-label="前の月">◀ 前月</button>
+        <div class="week-label">${escapeHtml(tcYMLabel(state.tcMonthYM))}</div>
+        <button class="btn btn-ghost" data-action="tc-month-next" type="button" aria-label="次の月">次月 ▶</button>
+        <button class="btn btn-soft btn-sm" data-action="tc-month-this" type="button">今月</button>
+        <button class="btn btn-ink btn-sm" data-action="tc-csv" type="button">CSV</button>
+        <button class="btn btn-ghost btn-sm" data-action="tc-print" type="button">印刷</button>
+      </div>
+      <section class="panel tc-month-panel">
+        ${renderTCMonthTable()}
+      </section>
+    `;
+  }
+
+  function renderTCMonthTable() {
+    const mo = state.tcMonth;
+    if (!mo || !state.tcMonthStaffId) {
+      return `<div class="empty-state">対象スタッフを選択してください。</div>`;
+    }
+    const days = mo.days || [];
+    const cfg = mo.config || state.tcConfig || { roundUnit: 1 };
+    const showRef = cfg.roundUnit !== 1;
+    const hasAny = days.some((d) => d.in || d.out || (d.breaks && d.breaks.length) || d.attendanceNote);
+
+    const rows = days
+      .map((d) => renderTCMonthRow(d, showRef))
+      .join("");
+
+    const totals = mo.totals || { days: 0, workedRaw: 0, overStd: 0 };
+    const refFoot =
+      showRef && totals.workedRef != null ? `　実働(丸め) ${fmtMin(totals.workedRef)}` : "";
+    const footer = `
+      <div class="tc-month-footer">
+        <span>出勤 ${totals.days}日</span>
+        <span>実働 ${fmtMin(totals.workedRaw)}${refFoot}</span>
+        <span>超過(参考) ${fmtMin(totals.overStd)}</span>
+      </div>
+    `;
+
+    const table = `
+      <div class="grid-scroll">
+        <table class="tc-month-table">
+          <thead>
+            <tr>
+              <th>日</th><th>曜</th><th>出勤</th><th>退勤</th><th>休憩</th><th>実働</th><th>超過(参考)</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+      ${footer}
+    `;
+
+    if (!hasAny) {
+      return `<div class="empty-state" style="margin-bottom:12px">この月の打刻はまだありません。<br>✎ から打刻を追加できます。</div>${table}`;
+    }
+    return table;
+  }
+
+  function renderTCMonthRow(d, showRef) {
+    const wd = d.weekday || wdOf(d.date);
+    const wdCls = wd === SUN_WD ? "is-sun" : wd === SAT_WD ? "is-sat" : "";
+    const dayNum = Number(String(d.date).slice(8, 10)) || d.date;
+    const flags = d.flags || [];
+    // フラグ由来 or 構造的に不整合な事実（invalid）を ⚠ で顕在化する（finding 4）。
+    const flagWarn =
+      flags.length || d.invalid ? ' <span class="tc-warn" title="要確認">⚠</span>' : "";
+    // Past incomplete day with 出勤 = 退勤/休憩忘れ.
+    const pastIncomplete = d.in && !d.complete && d.date < state.today;
+    const outCell = d.out
+      ? escapeHtml(d.out)
+      : pastIncomplete
+        ? `<span class="tc-warn">⚠</span>—`
+        : "—";
+    const inCell = d.in ? escapeHtml(d.in) : "—";
+    const brk = breakMinutes(d.breaks);
+    const brkCell = brk ? `${brk}分` : "—";
+    let workedCell = fmtMin(d.workedRaw);
+    if (showRef && d.workedRef != null) workedCell += ` <small>(${fmtMin(d.workedRef)})</small>`;
+    const overCell = fmtMin(d.overStd);
+
+    // Render the inline editor only when the draft is pinned to THIS staff/month
+    // AND this row's date (round-3 P1).
+    const editing =
+      draftMatchesMonth(state.tcEditDraft, state.tcMonth) && state.tcEditDraft.date === d.date;
+    const rowCls = editing ? "is-editing" : "";
+    const mainRow = `
+      <tr class="${rowCls} ${wdCls}">
+        <td>${dayNum}${flagWarn}</td>
+        <td class="${wdCls}">${wd}</td>
+        <td>${inCell}</td>
+        <td>${outCell}</td>
+        <td>${brkCell}</td>
+        <td>${workedCell}</td>
+        <td>${overCell}</td>
+        <td><button class="tc-edit-btn" data-action="tc-edit-open" data-date="${d.date}" type="button" aria-label="修正">✎</button></td>
+      </tr>
+    `;
+    if (!editing) return mainRow;
+    return mainRow + renderTCEditorRow();
+  }
+
+  function renderTCEditorRow() {
+    const d = state.tcEditDraft;
+    const breakRows = d.breaks
+      .map(
+        (b, i) => `
+        <div class="tc-break-row">
+          <label>休憩 開始 <input type="time" value="${escapeHtml(b.start)}" data-action="tc-edit-break-start" data-idx="${i}" /></label>
+          <label>終了 <input type="time" value="${escapeHtml(b.end)}" data-action="tc-edit-break-end" data-idx="${i}" /></label>
+          <button class="btn btn-danger btn-sm" data-action="tc-break-del" data-idx="${i}" type="button">削除</button>
+        </div>
+      `
+      )
+      .join("");
+    return `
+      <tr class="tc-edit-row">
+        <td colspan="8">
+          <div class="tc-editor">
+            <div class="tc-edit-times">
+              <label>出勤 <input type="time" value="${escapeHtml(d.in)}" data-action="tc-edit-in" /></label>
+              <label>退勤 <input type="time" value="${escapeHtml(d.out)}" data-action="tc-edit-out" /></label>
+            </div>
+            <div class="tc-breaks">
+              ${breakRows || `<p class="hint-text" style="margin:0">休憩なし</p>`}
+              <button class="btn btn-soft btn-sm" data-action="tc-break-add" type="button">＋ 休憩を追加</button>
+            </div>
+            <label class="tc-note-label">勤怠メモ
+              <textarea data-action="tc-edit-note" placeholder="遅刻・早退などのメモ（任意）">${escapeHtml(d.attendanceNote)}</textarea>
+            </label>
+            <div class="tc-edit-actions">
+              <button class="btn btn-ink" data-action="tc-edit-save" type="button">保存</button>
+              <button class="btn btn-ghost" data-action="tc-edit-cancel" type="button">取消</button>
+            </div>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+
+  /* ---- timecard actions ---- */
+  async function doTCPunch(staffId, action) {
+    try {
+      const resp = await post("/api/timecard/punch", { staffId, action });
+      syncUndoFlags(resp);
+      const labelMap = { in: "出勤", break_start: "休憩開始", break_end: "休憩終了", out: "退勤" };
+      const day = resp && resp.day ? resp.day : {};
+      let t = "";
+      if (action === "in") t = day.in || "";
+      else if (action === "out") t = day.out || "";
+      else if (day.breaks && day.breaks.length) {
+        const lb = day.breaks[day.breaks.length - 1];
+        t = action === "break_start" ? lb.start || "" : lb.end || "";
+      }
+      toast(`${staffName(staffId)}さん ${labelMap[action] || ""} ${t}`.trim());
+      await safe(loadTCToday);
+      render();
+    } catch (e) {
+      reportError(e);
+    }
+  }
+
+  function openTCEdit(date) {
+    const mo = state.tcMonth;
+    if (!mo) return;
+    const row = (mo.days || []).find((d) => d.date === date);
+    if (!row) return;
+    state.tcEditDraft = {
+      // Pin the editing context so a save always posts to the right staff/month
+      // even if a background poll changes the selection (finding 1).
+      staffId: state.tcMonthStaffId,
+      month: state.tcMonthYM,
+      date,
+      in: row.in || "",
+      out: row.out || "",
+      breaks: (row.breaks || []).map((b) => ({ start: b.start || "", end: b.end || "" })),
+      attendanceNote: row.attendanceNote || "",
+      expectedRev: row.rev,
+    };
+    state.tcEditDirty = false;
+    renderKeepingScroll();
+  }
+
+  // True when the pinned draft context matches the currently-loaded month view
+  // (same staff + same month) — a draft must never render or save across a
+  // switched selection (round-3 P1).
+  function draftMatchesMonth(d, mo) {
+    return !!d && !!mo && d.staffId === mo.staffId && d.month === mo.month;
+  }
+
+  // After an authoritative month refresh (undo/redo/revert/poll), a CLEAN open
+  // editor still holds a stale rev/values — rebuild it from the refreshed row, or
+  // close it if the row is gone. Dirty drafts are protected by the existing guard
+  // and left untouched (finding 8). If the loaded month no longer matches the
+  // draft's pinned staff/month, close the editor rather than rebind it (round-3 P1).
+  function reconcileCleanDraft() {
+    if (!state.tcEditDraft || state.tcEditDirty) return;
+    const mo = state.tcMonth;
+    if (!draftMatchesMonth(state.tcEditDraft, mo)) {
+      state.tcEditDraft = null; // loaded a different staff/month — close it.
+      return;
+    }
+    const row = mo && (mo.days || []).find((d) => d.date === state.tcEditDraft.date);
+    if (!row) {
+      state.tcEditDraft = null;
+      return;
+    }
+    state.tcEditDraft = {
+      staffId: state.tcEditDraft.staffId, // preserve pinned context (finding 1)
+      month: state.tcEditDraft.month,
+      date: row.date,
+      in: row.in || "",
+      out: row.out || "",
+      breaks: (row.breaks || []).map((b) => ({ start: b.start || "", end: b.end || "" })),
+      attendanceNote: row.attendanceNote || "",
+      expectedRev: row.rev,
+    };
+  }
+
+  // Single-flight guard: a double-tap on 保存 must not fire two requests against
+  // one rev (the second would self-409), finding 4.
+  let tcEditSaving = false;
+
+  function setTCSaveDisabled(disabled) {
+    const btn = document.querySelector('[data-action="tc-edit-save"]');
+    if (btn) btn.disabled = disabled;
+  }
+
+  async function saveTCEdit() {
+    const d = state.tcEditDraft;
+    if (!d || tcEditSaving) return;
+    const payload = {
+      // Post strictly to the pinned staff/date, never the (possibly poll-changed)
+      // global selection — no fallback (round-3 P1).
+      staffId: d.staffId,
+      date: d.date,
+      in: d.in,
+      out: d.out,
+      breaks: d.breaks.filter((b) => b.start || b.end),
+      attendanceNote: d.attendanceNote,
+      expectedRev: d.expectedRev,
+    };
+    tcEditSaving = true;
+    setTCSaveDisabled(true);
+    let res;
+    try {
+      res = await postRaw("/api/timecard/day", payload);
+    } catch (e) {
+      tcEditSaving = false;
+      setTCSaveDisabled(false);
+      reportError(e);
+      return;
+    }
+    tcEditSaving = false;
+    // Stale response: editing context changed while in flight — drop it (finding 4).
+    if (state.tcEditDraft !== d) return;
+    if (res.ok) {
+      syncUndoFlags(res.body);
+      state.tcEditDraft = null;
+      state.tcEditDirty = false;
+      toast("打刻を保存しました");
+      await safe(loadTCMonth);
+      renderKeepingScroll();
+      return;
+    }
+    if (res.status === 409) {
+      // 他端末が更新済み: 楽観ロック衝突。編集中の値は破棄し、サーバの currentDay で
+      // ドラフトを作り直す（古い入力を新 rev に対して上書きさせない、finding 3）。
+      toast("他の端末で更新されました。最新を確認してください", true);
+      // Refresh the table for the DRAFT's pinned context (not the global
+      // selection), and re-check the draft survived the await (round-3 P1).
+      try {
+        const fresh = await fetchTCMonth(d.staffId, d.month);
+        if (state.tcEditDraft !== d) return; // context changed during reload — drop
+        if (draftMatchesMonth(d, fresh)) {
+          state.tcMonth = fresh;
+          state.tcMonthStaffId = d.staffId;
+          state.tcMonthYM = d.month;
+          syncUndoFlags(fresh);
+        }
+      } catch (e) {
+        if (state.tcEditDraft !== d) return;
+      }
+      const cur = res.body && res.body.currentDay;
+      let newRev = res.body && typeof res.body.currentRev === "number" ? res.body.currentRev : null;
+      if (newRev == null) {
+        const row = state.tcMonth && (state.tcMonth.days || []).find((x) => x.date === d.date);
+        newRev = row ? row.rev : d.expectedRev;
+      }
+      state.tcEditDraft = {
+        staffId: d.staffId, // keep the pinned context (finding 1)
+        month: d.month,
+        date: d.date,
+        in: cur ? cur.in || "" : "",
+        out: cur ? cur.out || "" : "",
+        breaks:
+          cur && Array.isArray(cur.breaks)
+            ? cur.breaks.map((b) => ({ start: b.start || "", end: b.end || "" }))
+            : [],
+        attendanceNote: cur ? cur.attendanceNote || "" : "",
+        expectedRev: newRev,
+      };
+      // 最新値で作り直したので未変更状態。ユーザが改めて編集し直せる。
+      state.tcEditDirty = false;
+      renderKeepingScroll();
+      return;
+    }
+    // Validation (400) / other: keep editing, surface the message.
+    setTCSaveDisabled(false);
+    toast((res.body && res.body.error) || `エラー (${res.status})`, true);
+  }
+
+  // Read a COMPLETE snapshot of the config form so a save never derives a partial
+  // payload from stale state (finding 9).
+  function readTCConfigForm() {
+    const cur = state.tcConfig || { roundUnit: 1, roundDir: "floor", standardMinutes: 480 };
+    const unitEl = document.querySelector("#tc-round-unit");
+    const dirEl = document.querySelector("#tc-round-dir");
+    const hEl = document.querySelector('[data-action="tc-cfg-std-hours"]');
+    const mEl = document.querySelector('[data-action="tc-cfg-std-min"]');
+    const roundUnit = unitEl ? Number(unitEl.value) || 1 : cur.roundUnit;
+    const roundDir = dirEl ? dirEl.value : cur.roundDir;
+    const h = hEl ? Number(hEl.value) || 0 : Math.floor((cur.standardMinutes || 0) / 60);
+    const m = mEl ? Number(mEl.value) || 0 : (cur.standardMinutes || 0) % 60;
+    return { roundUnit, roundDir, standardMinutes: Math.max(0, Math.min(1440, h * 60 + m)) };
+  }
+
+  function setTCConfigControlsDisabled(disabled) {
+    document
+      .querySelectorAll(
+        '#tc-round-unit,#tc-round-dir,[data-action="tc-cfg-std-hours"],[data-action="tc-cfg-std-min"]'
+      )
+      .forEach((el) => {
+        el.disabled = disabled;
+      });
+  }
+
+  // Single-flight: disable the controls while a save is in flight so rapid changes
+  // can't launch parallel requests that race (last-response-wins), finding 9.
+  let tcConfigSaving = false;
+  async function saveTCConfig() {
+    if (tcConfigSaving) return;
+    const next = readTCConfigForm();
+    tcConfigSaving = true;
+    setTCConfigControlsDisabled(true);
+    try {
+      const resp = await post("/api/timecard/config", next);
+      syncUndoFlags(resp);
+      if (resp && resp.config) state.tcConfig = resp.config;
+      toast("タイムカード設定を保存しました");
+      render(); // re-renders the settings panel with fresh (re-enabled) controls
+    } catch (e) {
+      reportError(e);
+      setTCConfigControlsDisabled(false);
+    } finally {
+      tcConfigSaving = false;
+    }
+  }
+
+  /* ============================================================
    * Master render
    * ========================================================== */
   function render() {
+    // 更新中はフルスクリーンを最優先で表示する（他画面へは戻さない）。
+    if (state.updating) {
+      root.innerHTML = renderUpdatingScreen();
+      return;
+    }
     if (state.error) {
       root.innerHTML = `${renderTopbar()}<div class="empty-state" style="margin-top:24px">${escapeHtml(state.error)}</div>`;
       return;
@@ -896,11 +1830,16 @@
         root.innerHTML = renderConnectView();
         drawQR();
         break;
+      case "timecard":
+        root.innerHTML = renderTimecardView();
+        break;
       case "calendar":
       default:
         root.innerHTML = renderCalendarView();
         break;
     }
+    // Keep the punch clock's interval in sync with the freshly-rendered DOM.
+    syncTCClock();
   }
 
   /* ============================================================
@@ -1189,6 +2128,7 @@
     const data = await get("/api/bootstrap");
     state.staff = Array.isArray(data.staff) ? data.staff : [];
     state.processes = Array.isArray(data.processes) ? data.processes : [];
+    if (data.tcConfig) state.tcConfig = data.tcConfig;
     if (!activeStaff().some((s) => s.id === cur)) {
       const first = activeStaff()[0];
       state.staffId = first ? first.id : "";
@@ -1207,6 +2147,15 @@
     } else if (state.view === "calendar") {
       await safe(loadMonthMarks);
       render();
+    } else if (state.view === "timecard") {
+      if (state.timecardTab === "month") {
+        await safe(loadTCMonth);
+        reconcileCleanDraft(); // clean editor: rebuild from refreshed row (finding 8)
+        renderKeepingScroll();
+      } else {
+        await safe(loadTCToday);
+        render();
+      }
     } else {
       render();
     }
@@ -1410,14 +2359,87 @@
     document.body.removeChild(a);
   }
 
+  // Timecard monthly CSV (currently-selected staff).
+  function tcExportCsv() {
+    const month = state.tcMonthYM || (state.today || "").slice(0, 7);
+    const sid = state.tcMonthStaffId;
+    if (!month) {
+      toast("月が選択されていません", true);
+      return;
+    }
+    let url = `/api/timecard/export.csv?month=${encodeURIComponent(month)}`;
+    if (sid) url += `&staffId=${encodeURIComponent(sid)}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = sid ? `timecard_${month}_${sid}.csv` : `timecard_${month}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
   /* ============================================================
    * Event delegation
    * ========================================================== */
+  /* ============================================================
+   * 自動アップデート（§B3）: 適用 → 再起動待ち
+   * ========================================================== */
+  async function doUpdateApply() {
+    state.updateConfirmOpen = false;
+    const fallback = state.updateStatus && state.updateStatus.latest;
+    const res = await postRaw("/api/update/apply", {});
+    if (!res.ok) {
+      if (res.status === 409) {
+        toast("更新は既に進行中です", true);
+      } else {
+        toast((res.body && res.body.error) || `更新に失敗しました (${res.status})`, true);
+      }
+      render();
+      return;
+    }
+    // ステージング成功 → サーバは再起動する。全画面「更新中…」へ。
+    state.updating = true;
+    state.updateTimedOut = false;
+    state.updateTarget = (res.body && res.body.newVersion) || fallback || "";
+    render();
+    pollForRestart();
+  }
+
+  // bootstrap.version が newVersion になるまで 1 秒間隔で最大 90 秒待つ（§B3 step 5）。
+  // 単なる 200 応答では旧プロセスの店じまい中かもしれないので版一致まで待つ。
+  function pollForRestart() {
+    const target = state.updateTarget;
+    const start = Date.now();
+    const tick = async () => {
+      if (!state.updating) return; // 念のため（画面が変わったら停止）
+      if (Date.now() - start > 90000) {
+        state.updateTimedOut = true;
+        render();
+        return;
+      }
+      try {
+        const data = await get("/api/bootstrap");
+        if (data && data.version && data.version === target) {
+          window.location.reload();
+          return;
+        }
+      } catch (e) {
+        // 再起動中は接続エラーになる。無視して待つ。
+      }
+      setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 1000);
+  }
+
   root.addEventListener("click", (event) => {
     const target = event.target.closest("[data-action]");
     if (!target) return;
     const action = target.dataset.action;
+    // Draft protection: intercept destructive actions while a timecard edit is dirty.
+    if (interceptForDraft(action, target)) return;
+    dispatchClick(action, target);
+  });
 
+  function dispatchClick(action, target) {
     switch (action) {
       case "nav":
         goView(target.dataset.view);
@@ -1528,10 +2550,118 @@
         window.print();
         return;
 
+      // ---- Timecard ----
+      case "tc-subtab": {
+        const tab = target.dataset.tab;
+        if (tab === state.timecardTab) return;
+        state.timecardTab = tab;
+        state.tcEditDraft = null;
+        state.tcEditDirty = false;
+        state.tcConfirmOpen = false;
+        if (tab === "month") {
+          safe(loadTCMonth).then(() => {
+            render();
+            syncPolling();
+          });
+        } else {
+          safe(loadTCToday).then(() => {
+            render();
+            syncPolling();
+          });
+        }
+        return;
+      }
+      case "tc-punch":
+        doTCPunch(target.dataset.staffId, target.dataset.punch);
+        return;
+      case "tc-roster":
+        state.tcMonthStaffId = target.dataset.staffId;
+        state.tcEditDraft = null;
+        state.tcEditDirty = false;
+        safe(loadTCMonth).then(renderKeepingScroll);
+        return;
+      case "tc-month-prev":
+        state.tcMonthYM = addYM(state.tcMonthYM || (state.today || "").slice(0, 7), -1);
+        state.tcEditDraft = null;
+        state.tcEditDirty = false;
+        safe(loadTCMonth).then(renderKeepingScroll);
+        return;
+      case "tc-month-next":
+        state.tcMonthYM = addYM(state.tcMonthYM || (state.today || "").slice(0, 7), 1);
+        state.tcEditDraft = null;
+        state.tcEditDirty = false;
+        safe(loadTCMonth).then(renderKeepingScroll);
+        return;
+      case "tc-month-this":
+        state.tcMonthYM = (state.today || "").slice(0, 7);
+        state.tcEditDraft = null;
+        state.tcEditDirty = false;
+        safe(loadTCMonth).then(renderKeepingScroll);
+        return;
+      case "tc-csv":
+        tcExportCsv();
+        return;
+      case "tc-print":
+        window.print();
+        return;
+      case "tc-edit-open":
+        openTCEdit(target.dataset.date);
+        return;
+      case "tc-edit-save":
+        saveTCEdit();
+        return;
+      case "tc-edit-cancel":
+        state.tcEditDraft = null;
+        state.tcEditDirty = false;
+        state.tcConfirmOpen = false;
+        renderKeepingScroll();
+        return;
+      case "tc-break-add":
+        if (state.tcEditDraft) {
+          state.tcEditDraft.breaks.push({ start: "", end: "" });
+          state.tcEditDirty = true;
+          renderKeepingScroll();
+        }
+        return;
+      case "tc-break-del":
+        if (state.tcEditDraft) {
+          state.tcEditDraft.breaks.splice(Number(target.dataset.idx) || 0, 1);
+          state.tcEditDirty = true;
+          renderKeepingScroll();
+        }
+        return;
+      case "tc-discard":
+        discardDraftAndContinue();
+        return;
+      case "tc-keep-editing":
+        keepEditing();
+        return;
+
+      // ---- 自動アップデート ----
+      case "update-apply":
+        state.updateConfirmOpen = true;
+        render();
+        return;
+      case "update-cancel":
+        state.updateConfirmOpen = false;
+        render();
+        return;
+      case "update-dismiss":
+        state.updateDismissed = true;
+        state.updateConfirmOpen = false;
+        render();
+        return;
+      case "update-confirm":
+        doUpdateApply();
+        return;
+      case "update-reload":
+        window.location.reload();
+        return;
+
       default:
         return;
     }
-  });
+  }
 
   // Text inputs / dates (input event for live, change for commit).
   root.addEventListener("input", (event) => {
@@ -1573,6 +2703,32 @@
     }
     if (action === "export-end") {
       state.exportEnd = target.value;
+      return;
+    }
+
+    // ---- Timecard inline editor (mutate draft, no re-render to keep focus) ----
+    if (!state.tcEditDraft) return;
+    if (action === "tc-edit-in") {
+      state.tcEditDraft.in = target.value;
+      state.tcEditDirty = true;
+    } else if (action === "tc-edit-out") {
+      state.tcEditDraft.out = target.value;
+      state.tcEditDirty = true;
+    } else if (action === "tc-edit-note") {
+      state.tcEditDraft.attendanceNote = target.value;
+      state.tcEditDirty = true;
+    } else if (action === "tc-edit-break-start") {
+      const i = Number(target.dataset.idx) || 0;
+      if (state.tcEditDraft.breaks[i]) {
+        state.tcEditDraft.breaks[i].start = target.value;
+        state.tcEditDirty = true;
+      }
+    } else if (action === "tc-edit-break-end") {
+      const i = Number(target.dataset.idx) || 0;
+      if (state.tcEditDraft.breaks[i]) {
+        state.tcEditDraft.breaks[i].end = target.value;
+        state.tcEditDirty = true;
+      }
     }
   });
 
@@ -1593,6 +2749,19 @@
     if (action === "history-filter") {
       state.historyFilter = target.value;
       safe(loadHistory).then(render);
+      return;
+    }
+
+    // ---- Timecard settings (config) ----
+    // All three controls save a complete current-form snapshot via saveTCConfig()
+    // (single-flight, finding 9).
+    if (
+      action === "tc-cfg-round-unit" ||
+      action === "tc-cfg-round-dir" ||
+      action === "tc-cfg-std-hours" ||
+      action === "tc-cfg-std-min"
+    ) {
+      saveTCConfig();
     }
   });
 
@@ -1637,7 +2806,7 @@
     if (document.hidden) return;
     if (!state.ready || state.error) return;
     // Only the multi-device-sensitive views need background refresh.
-    if (state.view !== "grid" && state.view !== "history") return;
+    if (state.view !== "grid" && state.view !== "history" && state.view !== "timecard") return;
     if (isEditingText()) return;
     refreshing = true;
     try {
@@ -1649,6 +2818,20 @@
         await safe(loadHistory);
         if (isEditingText()) return;
         render();
+      } else if (state.view === "timecard") {
+        if (state.timecardTab === "punch") {
+          await safe(loadTCToday);
+          render(); // re-anchors the clock via loadTCToday
+        } else {
+          // Dirty draft: skip the refetch entirely so the poll's roster fallback
+          // can't change the staff/month selection under a pending save (finding 1).
+          if (state.tcEditDirty) return;
+          await safe(loadTCMonth);
+          if (state.tcEditDirty) return; // became dirty mid-fetch
+          reconcileCleanDraft(); // clean editor: rebuild from refreshed row (finding 8)
+          if (isEditingText()) return;
+          renderKeepingScroll();
+        }
       }
     } finally {
       refreshing = false;
@@ -1657,7 +2840,8 @@
 
   // Start/stop the poll loop to match the current view.
   function syncPolling() {
-    const wantPolling = state.view === "grid" || state.view === "history";
+    const wantPolling =
+      state.view === "grid" || state.view === "history" || state.view === "timecard";
     if (wantPolling && !pollTimer) {
       pollTimer = setInterval(() => {
         refreshCurrentView();
@@ -1675,9 +2859,20 @@
         clearInterval(pollTimer);
         pollTimer = null;
       }
+      syncTCClock(); // stops the punch clock while hidden
     } else {
       refreshCurrentView();
       syncPolling();
+      syncTCClock(); // restart the punch clock on return
+    }
+  });
+
+  // Browser reload/close protection while a timecard edit is unsaved.
+  window.addEventListener("beforeunload", (event) => {
+    if (state.tcEditDirty) {
+      event.preventDefault();
+      event.returnValue = "";
+      return "";
     }
   });
 
@@ -1693,6 +2888,9 @@
     }
     render();
     syncPolling();
+    // 更新確認は起動をブロックしない。起動時の非同期確認が終わるまで数回再取得して
+    // リロード無しでバナーを反映する（finding 5）。
+    refreshUpdateStatus(3);
   }
 
   boot();

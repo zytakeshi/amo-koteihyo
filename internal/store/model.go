@@ -33,6 +33,29 @@ type Event struct {
 	Label     string      `json:"label"`               // 人が読める要約
 }
 
+// BreakSpan は1回の休憩（開始/終了、"HH:MM" JST）。end=="" は「休憩中」。
+type BreakSpan struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+// DayAttendance は1スタッフ・1営業日の勤怠の生データ（打刻事実）。
+// 生の分がそのまま給与の値になる（丸めは参考表示のみ）。
+type DayAttendance struct {
+	In     string      `json:"in"`     // 出勤 "HH:MM"。"" = 未出勤
+	Out    string      `json:"out"`    // 退勤 "HH:MM"。"" = 未退勤
+	Breaks []BreakSpan `json:"breaks"` // 休憩（複数可）
+	Note   string      `json:"note"`   // 勤怠メモ（業務メモとは別物）
+	Flags  []string    `json:"flags"`  // provenance: midnight_clamped / clock_warp 等
+}
+
+// TCConfig はタイムカードの表示・集計設定（丸めは参考表示のみ）。
+type TCConfig struct {
+	RoundUnit       int    `json:"roundUnit"`       // 1(=丸めなし,既定)|5|10|15|30 分
+	RoundDir        string `json:"roundDir"`        // floor|nearest(四捨五入)|ceil
+	StandardMinutes int    `json:"standardMinutes"` // 所定労働時間/日（分）
+}
+
 // DB は永続化されるトップレベル構造。
 type DB struct {
 	Version   int        `json:"version"`
@@ -42,6 +65,13 @@ type DB struct {
 	Counts map[string]int `json:"counts"`
 	// 備考。キー = "<staffId>|<YYYY-MM-DD>"
 	Memos map[string]string `json:"memos"`
+	// 勤怠（打刻事実）。キー = "<staffId>|<YYYY-MM-DD>"。nil/欠落 = 欠勤
+	Attendance map[string]*DayAttendance `json:"attendance"`
+	// 楽観ロック用の日次リビジョン（派生キャッシュ。event-source ではない）。
+	// キーの全変更（打刻・打刻修正・undo/redo/revert）で +1 する。
+	AttendanceRev map[string]int `json:"attendanceRev"`
+	// タイムカード設定。
+	TCConfig *TCConfig `json:"tcConfig"`
 	// append-only 監査ログ（絶対に削除しない）
 	Events []*Event `json:"events"`
 	// undo で取り消したものを redo 用に退避
