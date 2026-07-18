@@ -429,7 +429,13 @@ try {
   try {
     $headers = @{ 'User-Agent' = 'AMO-koteihyo-update/2'; 'Accept' = 'application/octet-stream' }
     Invoke-WebRequest -Uri $UrlExe -OutFile $tmp -Headers $headers -UseBasicParsing -TimeoutSec 120 -MaximumRedirection 10
-    $shaText = (Invoke-WebRequest -Uri $UrlSha -Headers $headers -UseBasicParsing -TimeoutSec 120 -MaximumRedirection 10).Content
+    # NOTE: GitHub serves assets as application/octet-stream, so .Content is a byte[] on
+    # PS 5.1 (a [string] coercion yields "98 54 ..." and the parse fails -> false hash error,
+    # the client's actual field failure). Download to a file and read as text instead.
+    $shaTmp = $tmp + '.sha256'
+    Invoke-WebRequest -Uri $UrlSha -OutFile $shaTmp -Headers $headers -UseBasicParsing -TimeoutSec 120 -MaximumRedirection 10
+    $shaText = [System.IO.File]::ReadAllText($shaTmp, [System.Text.Encoding]::UTF8)
+    try { [System.IO.File]::Delete($shaTmp) } catch {}
   } catch {
     Log('step2 download FAILED: ' + $_.Exception.Message)
     Remove-Temp $tmp
