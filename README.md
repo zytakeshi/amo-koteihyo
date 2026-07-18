@@ -117,8 +117,21 @@ iPad / iPhone はこの URL を開くか、画面の QR コードを読み込ん
 1. 作業ツリーをクリーンにして `git tag vX.Y.Z`（`vMAJOR.MINOR.PATCH` 形式必須）。
 2. `bash build/build-windows.sh` を実行（開発ビルドは `--dev`）。表示された `バージョン` が
    タグと一致することを確認。生成物は `build/AMO-koteihyo.exe` と `build/AMO-koteihyo.exe.sha256`。
-3. GitHub リリースを作成し、**`AMO-koteihyo.exe` と `AMO-koteihyo.exe.sha256` の両方**を添付。
-4. `/releases/latest` に新バージョンが表示されることを確認（両アセットが揃って初めて更新対象）。
+3. GitHub リリースを作成し、次の **3 つのアセット**を添付（3 つ揃って初めて配布可）:
+   - `AMO-koteihyo.exe`（本体）
+   - `AMO-koteihyo.exe.sha256`（ハッシュ）
+   - **`AMO-koteihyo-update.bat`** ← `build/かんたんアップデート.bat` を**この ASCII 名に変えて**アップロード
+     （GitHub は非 ASCII のアセット名を受け付けないため。中身は同一。これが無いと使い方ガイドの
+     ダウンロードボタンと `かんたんアップデート.bat` 本体が 404 になる）。
+4. `/releases/latest/download/...` の各 URL が **HTTP 200** で取得できることを確認（本体・sha256・
+   update.bat の 3 本とも）。例:
+   ```sh
+   for a in AMO-koteihyo.exe AMO-koteihyo.exe.sha256 AMO-koteihyo-update.bat; do
+     curl -sI -o /dev/null -w "%{http_code} $a\n" -L \
+       "https://github.com/zytakeshi/amo-koteihyo/releases/latest/download/$a"
+   done
+   ```
+   3 本すべて 200 になってから告知・配布する。
 
 ## ファイアウォール（Windows の受信許可）
 
@@ -155,4 +168,38 @@ v1.1.0 で JSON にタイムカード用の項目（`attendance` / `attendanceRe
 
 ```
 docs/使い方ガイド.html
+```
+
+## v1.0.0 → v1.1.0 の手動アップグレード（今回のみ）
+
+v1.0.0 には自動アップデート機能がないため、v1.1.0 へ上げるときだけ手作業が必要です。
+非技術者でも一人で実行できるよう、**ダブルクリック1つ**で完了する「かんたんアップデート」
+を用意しています。動作の要点:
+
+- 既存インストールを自動探索（**updater 自身のフォルダ → KFM 対応の実デスクトップ／OneDrive →
+  %USERPROFILE% 再帰**の順、`data\koteihyo.json` を持つものを優先）。
+- **先にダウンロード＋SHA-256 検証を完了**してから旧 exe に触れる（検証前は旧アプリを一切止めない・
+  動かせる状態を維持）。検証成功後に限りアプリ終了 → バックアップ → 差し替え。
+- フォルダ内の **両方の exe 名**（`AMO-koteihyo.exe` と `AMO工程表.exe`）をそれぞれ
+  `<名前>.old-v1.0.0` として退避（改名のみ・削除なし。衝突時は `.2` 等を付与、実ファイル名は
+  黒い画面に表示）。旧 `AMO工程表.exe` のショートカットが残っても、成功後に**同名の互換コピー**
+  （新版）を置くので従来のショートカットもそのまま動く。
+- 設置後に **`-PassThru` で起動して約3秒 生存確認**。すぐ落ちたら新 exe を `.failed` に退避し、
+  退避した旧 exe を**元の名前へ**戻して起動し直す（戻せない場合のみ専用コード 21 で
+  バックアップ名を表示して手動復旧を案内）。
+- `data\` と `koteihyo.json` は**この更新ツールでは一切変更しない**（新版が初回起動時に
+  `data\backup\koteihyo.pre-v1.1.0.json` を自動作成）。ダウンロードは PowerShell 5.1 でも
+  `-TimeoutSec 120`／TLS1.2 で無限待ちを防止。
+
+ファイル:
+
+```
+build/かんたんアップデート.bat        （リポジトリ内のファイル名）
+AMO-koteihyo-update.bat               （GitHub Releases 上の配布名・ASCII）
+```
+
+手順を絵入りで説明したスタッフ向けガイド（ブラウザで開くだけ・印刷可）:
+
+```
+docs/アップデートガイド.html
 ```

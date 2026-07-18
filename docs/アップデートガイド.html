@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AMO BARBER 工程表 — アップデートガイド</title>
+<meta name="description" content="AMO BARBER 工程表アプリを新しいバージョンに更新する、かんたんアップデートの手順ガイドです。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232b2620'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='serif' font-size='22' font-weight='bold' fill='%23f3ead7'%3EA%3C/text%3E%3C/svg%3E">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--paper:#f3ead7;--paper-2:#e3d6be;--ink:#2b2620;--muted:#7a7062;--line:#c9b99a;
+--rose:#c0465a;--green:#3a8a5c;--white:#faf8f2;
+--ff-head:"Noto Serif JP","Yu Mincho","Hiragino Mincho ProN","MS PMincho",serif;
+--ff-body:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",Meiryo,"Noto Sans JP",sans-serif;
+--r:8px;--r-pill:999px;
+}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;font-size:17px}
+body{font-family:var(--ff-body);color:var(--ink);background:var(--paper);line-height:1.8;
+background-image:
+linear-gradient(var(--line) 1px,transparent 1px),
+linear-gradient(90deg,var(--line) 1px,transparent 1px);
+background-size:72px 72px;background-position:center center;
+background-blend-mode:multiply;
+}
+body::before{content:"";position:fixed;inset:0;background:var(--paper);opacity:.92;z-index:-1;pointer-events:none}
+a{color:var(--rose);text-decoration:none}
+a:hover,a:focus-visible{text-decoration:underline}
+a:focus-visible{outline:2px solid var(--rose);outline-offset:2px;border-radius:3px}
+img,svg{display:block;max-width:100%}
+h1,h2,h3{font-family:var(--ff-head);font-weight:700;line-height:1.4}
+h1{font-size:1.7rem}h2{font-size:1.35rem}h3{font-size:1.1rem}
+
+/* layout */
+.wrap{max-width:760px;margin:0 auto;padding:0 20px}
+.hero{text-align:center;padding:56px 20px 40px}
+.hero h1{margin-bottom:12px;letter-spacing:.04em}
+.hero .sub{color:var(--muted);font-size:.95rem;margin-bottom:20px}
+.hero .promise{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:16px 20px;font-size:1rem;display:inline-block;max-width:520px;text-align:left}
+.hero .scroll-hint{margin-top:28px;color:var(--muted);font-size:.85rem}
+.hero .scroll-hint span{display:inline-block;animation:bounce 2s infinite}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+@media(prefers-reduced-motion:reduce){.hero .scroll-hint span{animation:none}}
+
+/* toc */
+.dl-row{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:24px 0 6px}
+.dl-btn{display:inline-flex;align-items:center;gap:8px;background:var(--rose);color:#fff;font-weight:700;text-decoration:none;padding:14px 26px;border-radius:var(--r-pill);font-size:1.05rem;box-shadow:0 4px 14px rgba(0,0,0,.14)}
+.dl-btn.alt{background:var(--white);color:var(--ink);border:1px solid var(--line);box-shadow:none;font-size:.92rem;padding:12px 22px}
+.dl-note{color:var(--muted);font-size:.82rem;margin-top:8px}
+.toc{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:20px 24px;margin:0 auto 40px;max-width:520px}
+.toc h2{font-size:1rem;margin-bottom:10px}
+.toc ol{padding-left:1.4em;font-size:.92rem}
+.toc li{margin-bottom:4px}
+.toc li a{color:var(--ink)}
+.toc li a:hover{color:var(--rose)}
+
+/* sections */
+.section{padding:36px 0;opacity:1;transform:translateY(0);transition:opacity .5s ease,transform .5s ease}
+.section.reveal-hidden{opacity:0;transform:translateY(28px)}
+@media(prefers-reduced-motion:reduce){.section.reveal-hidden{opacity:1;transform:none;transition:none}}
+/* 印刷時は全セクションを必ず表示（スクロール前に印刷しても白紙にならないように） */
+@media print{.section.reveal-hidden{opacity:1 !important;transform:none !important}}
+.section+.section{border-top:1px solid var(--line)}
+.section-num{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;background:var(--ink);color:var(--white);border-radius:50%;font-size:.85rem;font-weight:700;flex-shrink:0;font-family:var(--ff-body)}
+.section-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.section p,.section li{margin-bottom:8px;font-size:.97rem}
+.section ul,.section ol{padding-left:1.3em}
+.section ol li{margin-bottom:10px}
+
+/* step list */
+.steps{list-style:none;padding:0;counter-reset:step}
+.steps li{counter-increment:step;padding-left:36px;position:relative;margin-bottom:14px}
+.steps li::before{content:counter(step);position:absolute;left:0;top:1px;width:26px;height:26px;background:var(--ink);color:var(--white);border-radius:50%;font-size:.78rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+/* mini-ui figures */
+.mini-ui{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:18px 0;overflow-x:auto}
+.mini-ui .caption{font-size:.8rem;color:var(--muted);text-align:center;margin-top:8px}
+
+/* stepper */
+.stepper{display:inline-flex;align-items:center;gap:0;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);font-size:1rem;vertical-align:middle}
+.stepper .btn-minus,.stepper .btn-plus{border:none;width:44px;height:40px;font-size:1.2rem;font-weight:700;cursor:default;display:flex;align-items:center;justify-content:center}
+.stepper .btn-minus{background:var(--white);color:var(--ink)}
+.stepper .btn-plus{background:var(--rose);color:var(--white)}
+.stepper .val{width:40px;text-align:center;font-weight:700;background:var(--white);height:40px;line-height:40px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+
+/* compare boxes */
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+.compare-box{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:14px;text-align:center}
+.compare-box.after{border-color:var(--green);background:#f0f7f2}
+.compare-box h3{font-size:.9rem;margin-bottom:6px}
+.compare-box p{font-size:.85rem;color:var(--muted);margin:0}
+.compare-box .emoji{font-size:1.6rem;margin-bottom:6px}
+@media(max-width:480px){.compare{grid-template-columns:1fr}}
+
+/* cards */
+.card{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:8px 0}
+.card.dark{background:var(--ink);color:var(--white);border-color:var(--ink)}
+.card.dark .label{color:rgba(255,255,255,.65)}
+.card .label{font-size:.78rem;color:var(--muted);margin-bottom:4px}
+.card .big{font-size:1.3rem;font-weight:700}
+.cards-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+@media(max-width:480px){.cards-row{grid-template-columns:1fr}}
+
+/* console mock */
+.console{background:#1a1a1a;color:#80ff80;border-radius:var(--r);padding:14px 16px;font-family:"SF Mono",Consolas,"Courier New",monospace;font-size:.82rem;line-height:1.6;margin:16px 0;overflow-x:auto}
+.console .dim{color:#668866}
+
+/* qr mock */
+.qr-mock{width:100px;height:100px;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);gap:2px;margin:0 auto}
+.qr-mock span{background:var(--ink);border-radius:2px}
+.qr-mock span:nth-child(even){background:var(--paper-2)}
+
+/* tabs mock */
+.tabs-mock{display:flex;gap:0;border-bottom:2px solid var(--line);margin-bottom:12px}
+.tabs-mock .tab{padding:8px 14px;font-size:.82rem;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted);cursor:default}
+.tabs-mock .tab.active{border-bottom-color:var(--rose);color:var(--ink);font-weight:700}
+
+/* nav mock */
+.nav-mock{display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0}
+.nav-mock .btn-nav{background:var(--white);border:1px solid var(--line);border-radius:var(--r-pill);padding:6px 14px;font-size:.82rem;cursor:default}
+.nav-mock .btn-nav.rose{background:var(--rose);color:var(--white);border-color:var(--rose)}
+.nav-mock .week-label{font-weight:700;font-size:.9rem}
+
+/* undo icons */
+.undo-row{display:flex;gap:16px;flex-wrap:wrap;margin:16px 0}
+.undo-item{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:14px;text-align:center;flex:1;min-width:120px}
+.undo-item .icon{font-size:1.5rem;margin-bottom:4px}
+.undo-item .name{font-weight:700;font-size:.88rem;margin-bottom:2px}
+.undo-item .desc{font-size:.78rem;color:var(--muted)}
+
+/* settings mock */
+.setting-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.88rem}
+.setting-row:last-child{border-bottom:none}
+.setting-row .name{flex:1;font-weight:600}
+.setting-row .price{color:var(--muted);width:70px;text-align:right}
+.setting-row .arrows{color:var(--muted);font-size:.8rem}
+
+/* qa */
+.qa-item{margin-bottom:18px}
+.qa-item summary{font-weight:700;cursor:pointer;padding:8px 0;list-style:none;position:relative;padding-left:28px;font-size:.95rem}
+.qa-item summary::before{content:"Q";position:absolute;left:0;width:22px;height:22px;background:var(--rose);color:var(--white);border-radius:50%;font-size:.72rem;display:flex;align-items:center;justify-content:center;font-weight:700;top:8px}
+.qa-item summary:focus-visible{outline:2px solid var(--rose);outline-offset:2px;border-radius:3px}
+.qa-item .answer{padding:6px 0 6px 28px;font-size:.9rem;color:var(--muted)}
+.qa-item .answer strong{color:var(--ink)}
+
+/* badge / pill */
+.pill{display:inline-block;background:var(--paper-2);color:var(--ink);border-radius:var(--r-pill);padding:2px 10px;font-size:.78rem;font-weight:600}
+.pill.rose{background:var(--rose);color:var(--white)}
+.pill.green{background:var(--green);color:var(--white)}
+
+/* tip box */
+.tip{background:var(--paper-2);border-left:3px solid var(--rose);border-radius:0 var(--r) var(--r) 0;padding:12px 16px;margin:14px 0;font-size:.88rem}
+.tip .tip-label{font-weight:700;color:var(--rose);font-size:.8rem;margin-bottom:2px}
+
+/* footer */
+.footer{text-align:center;padding:40px 20px;color:var(--muted);font-size:.82rem;border-top:1px solid var(--line);margin-top:20px}
+
+/* table mock */
+.tbl-mock{width:100%;border-collapse:collapse;font-size:.82rem;margin:10px 0}
+.tbl-mock th,.tbl-mock td{border:1px solid var(--line);padding:6px 8px;text-align:center}
+.tbl-mock th{background:var(--paper-2);font-weight:600}
+.tbl-mock .day-active{background:#fdf0f2}
+
+/* file tree */
+.file-tree{font-family:"SF Mono",Consolas,monospace;font-size:.82rem;background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin:14px 0;line-height:1.8}
+.file-tree .folder{color:var(--muted)}
+.file-tree .highlight{background:#fdf0f2;padding:1px 6px;border-radius:3px;font-weight:700}
+
+/* responsive */
+@media(max-width:480px){
+html{font-size:15px}
+.hero{padding:36px 16px 28px}
+.hero h1{font-size:1.4rem}
+.wrap{padding:0 14px}
+.section{padding:28px 0}
+}
+@media(min-width:1200px){
+.wrap{max-width:800px}
+}
+</style>
+<style>
+/* ==== アップデートガイド専用の微調整（共有トークンを流用） ==== */
+.dl-btn.big{font-size:1.25rem;padding:20px 34px;gap:12px}
+.bigstep{background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:16px 0;display:flex;gap:16px;align-items:flex-start}
+.bigstep .num{flex-shrink:0;width:46px;height:46px;background:var(--ink);color:var(--white);border-radius:50%;font-family:var(--ff-head);font-size:1.4rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+.bigstep .body{flex:1}
+.bigstep .body h3{font-size:1.15rem;margin-bottom:6px}
+.bigstep .body p{margin-bottom:8px;font-size:1rem}
+.smartscreen{background:#0b3d91;color:#fff;border-radius:var(--r);padding:18px 20px;margin:12px 0;font-size:.9rem;line-height:1.7}
+.smartscreen .ss-title{font-size:1.05rem;font-weight:700;margin-bottom:8px}
+.smartscreen .ss-link{color:#cfe0ff;text-decoration:underline;font-weight:700}
+.smartscreen .ss-btn{display:inline-block;background:#e6e6e6;color:#1a1a1a;border-radius:4px;padding:6px 18px;font-weight:700;margin-top:10px}
+@media(max-width:480px){.bigstep{flex-direction:column;gap:10px}.bigstep .num{width:40px;height:40px;font-size:1.2rem}}
+</style>
+<noscript><style>.section.reveal-hidden{opacity:1 !important;transform:none !important}</style></noscript>
+</head>
+<body>
+
+<!-- ===== HERO ===== -->
+<header class="hero" role="banner">
+<h1>AMO BARBER 工程表<br><span style="font-size:.6em;letter-spacing:.02em">— アップデートガイド —</span></h1>
+<p class="sub">新しいバージョンへの かんたん更新</p>
+<div class="promise">
+<strong>いま使っているアプリを、新しいバージョンにします。</strong><br>
+むずかしい操作はありません。ボタンを押して、ダブルクリックするだけ。<br>
+<strong>データ（打刻・工程表）は消えません。</strong>
+</div>
+<div class="dl-row">
+<a class="dl-btn big" href="https://github.com/zytakeshi/amo-koteihyo/releases/latest/download/AMO-koteihyo-update.bat">⬇ かんたんアップデートを ダウンロード</a>
+</div>
+<p class="dl-note">ダウンロードした <code>AMO-koteihyo-update.bat</code> をダブルクリックするだけです。</p>
+<p class="scroll-hint">下に手順があります <span aria-hidden="true">↓</span></p>
+</header>
+
+<main class="wrap" role="main">
+
+<!-- ===== 手順 ===== -->
+<section id="steps" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">1</span><h2>4ステップで更新できます</h2></div>
+
+<div class="bigstep">
+<div class="num">①</div>
+<div class="body">
+<h3>「かんたんアップデート」をダウンロード</h3>
+<p>下のボタンを押すと、更新用のファイルが1つダウンロードされます。</p>
+<div class="dl-row" style="justify-content:flex-start;margin:10px 0 0">
+<a class="dl-btn" href="https://github.com/zytakeshi/amo-koteihyo/releases/latest/download/AMO-koteihyo-update.bat">⬇ ダウンロード</a>
+</div>
+<p class="dl-note" style="margin-top:8px">ファイル名：<code>AMO-koteihyo-update.bat</code>（ふつうは「ダウンロード」フォルダに入ります）</p>
+</div>
+</div>
+
+<div class="bigstep">
+<div class="num">②</div>
+<div class="body">
+<h3>ダウンロードしたファイルを ダブルクリック</h3>
+<p>ダウンロードした <code>AMO-koteihyo-update.bat</code> を<strong>ダブルクリック</strong>します。</p>
+<p class="dl-note">※ このとき、<strong>青い警告画面</strong>や、ブラウザの「このファイルを保存しますか？」が<strong>先に出ることがあります</strong>。出たら、あわてずに次の③へ進んでください。</p>
+</div>
+</div>
+
+<div class="bigstep">
+<div class="num">③</div>
+<div class="body">
+<h3>青い画面や警告が出たら「詳細情報」→「実行」</h3>
+<p><strong>「WindowsによってPCが保護されました」</strong>という青い画面が出ることがあります。あわてなくて大丈夫です。（お使いのパソコンの設定により、<strong>表示やボタンの文言は少し変わります</strong>。）</p>
+<div class="smartscreen">
+<div class="ss-title">WindowsによってPCが保護されました</div>
+Microsoft Defender SmartScreen は認識されないアプリの起動を停止しました…<br>
+<span class="ss-link">詳細情報</span> ← まずここを押す<br>
+<span class="ss-btn">実行</span> ← 次にこのボタンが出るので押す
+</div>
+<p class="dl-note">「詳細情報」を押す → 下に「実行」ボタンが出る → 「実行」を押す、の順です。<br>ブラウザ側で「保持する／保存」を聞かれたら、<strong>「保持する」</strong>を選んでください。</p>
+</div>
+</div>
+
+<div class="bigstep">
+<div class="num">④</div>
+<div class="body">
+<h3>黒い画面に完了メッセージが出て、新しいアプリが自動で開きます</h3>
+<p>「実行」を押すと<strong>黒い画面</strong>が開き、自動で更新がはじまります。途中で<strong>閉じずに</strong>お待ちください。<br>黒い画面に<strong>「更新が完了しました！」</strong>と出たら成功です。そのまま<strong>新しいバージョンのアプリが自動で開きます</strong>。</p>
+<div class="console">
+************************************************************<br>
+*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;更新が完了しました！&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;*<br>
+************************************************************<br>
+<span class="dim">新しいアプリの黒いウィンドウが自動で開きます。</span><br>
+<span class="dim">このウィンドウは閉じて大丈夫です。</span>
+</div>
+<p class="dl-note">この黒い画面は、読んだあとは閉じて大丈夫です。</p>
+</div>
+</div>
+</section>
+
+<!-- ===== データは消えません ===== -->
+<section id="data" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">2</span><h2>データは消えません</h2></div>
+<p>更新しても、これまでの<strong>打刻・工程表・設定はそのまま</strong>残ります。安心してお使いください。</p>
+<div class="tip">
+<div class="tip-label">🛡 自動でバックアップします</div>
+更新のときに、古いアプリは同じフォルダに <code>AMO-koteihyo.exe.old-v1.0.0</code>（以前の名前が <code>AMO工程表.exe</code> だった場合は <code>AMO工程表.exe.old-v1.0.0</code> も）という名前で<strong>残します（消しません）</strong>。<br>
+既存の <code>koteihyo.json</code> は<strong>この更新ツールでは変更しません</strong>。新しいアプリが初回起動時に、安全のための控え <code>data\backup\koteihyo.pre-v1.1.0.json</code> を自動で作成します。
+</div>
+<div class="tip">
+<div class="tip-label">🔗 今までのショートカットもそのまま使えます</div>
+以前 <code>AMO工程表.exe</code> のショートカットを使っていた場合でも、更新後は<strong>同じ名前でも新しいバージョンが開く</strong>ようにしてあります。デスクトップのショートカットは、そのままでOKです。
+</div>
+</section>
+
+<!-- ===== 困ったとき ===== -->
+<section id="help" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">3</span><h2>困ったとき</h2></div>
+
+<div class="qa-item">
+<details>
+<summary>黒い画面が一瞬で消えてしまった</summary>
+<div class="answer">
+何かのエラーで途中で閉じた可能性があります。<strong>データは無事</strong>です。<br>
+→ もう一度 <code>AMO-koteihyo-update.bat</code> をダブルクリックしてみてください。<br>
+→ それでも消えてしまう場合は、<strong>そのままの状態で連絡してください</strong>。
+</div>
+</details>
+</div>
+
+<div class="qa-item">
+<details>
+<summary>更新したのに、まだ古いバージョンのまま</summary>
+<div class="answer">
+アプリを一度<strong>閉じてから開き直す</strong>と、新しい画面になることがあります。<br>
+→ それでも変わらない・エラーが出る場合は、<strong>無理に操作せず連絡してください</strong>。古いアプリは残してあるので、元の状態にすぐ戻せます。
+</div>
+</details>
+</div>
+
+<div class="card" style="border-left:4px solid var(--rose);margin-top:16px">
+<strong>📞 うまくいかないときは</strong><br>
+無理に何度もやり直さず、<strong>画面をそのままにして連絡してください</strong>。<br>
+今のアプリは残してあるので、いつでも元に戻せます。データが消えることはありません。
+</div>
+</section>
+
+<!-- ===== 次回から ===== -->
+<section id="future" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">4</span><h2>この手作業は、今回だけです</h2></div>
+<p>今回のこの更新は<strong>最初の一回だけ</strong>の手作業です。</p>
+<div class="tip">
+<div class="tip-label">✨ 次回からはワンタップ</div>
+新しいバージョンが出ると、アプリの<strong>カレンダー画面の上に案内</strong>が出ます。<br>
+そこの <span class="pill rose" style="cursor:default">今すぐ更新</span> を押すだけで、これからは<strong>アプリの中だけで自動更新</strong>できます。
+</div>
+</section>
+
+</main>
+
+<!-- ===== FOOTER ===== -->
+<footer class="footer" role="contentinfo">
+<p><strong>AMO BARBER 工程表</strong> — 社内用</p>
+<p style="margin-top:6px">わからないことがあったら、店長に聞いてください 😊</p>
+</footer>
+
+<script>
+// Reveal on scroll with IntersectionObserver（使い方ガイドと同じ）
+(function(){
+var mq=window.matchMedia('(prefers-reduced-motion: reduce)');
+if(mq.matches) return;
+var sections=document.querySelectorAll('.section.reveal-hidden');
+if(!('IntersectionObserver' in window)){
+sections.forEach(function(s){s.classList.remove('reveal-hidden')});
+return;
+}
+var obs=new IntersectionObserver(function(entries){
+entries.forEach(function(e){
+if(e.isIntersecting){
+e.target.classList.remove('reveal-hidden');
+obs.unobserve(e.target);
+}
+});
+},{threshold:0.12,rootMargin:'0px 0px -40px 0px'});
+sections.forEach(function(s){obs.observe(s)});
+mq.addEventListener('change',function(e){
+if(e.matches){
+sections.forEach(function(s){s.classList.remove('reveal-hidden');obs.unobserve(s)});
+}
+});
+})();
+</script>
+</body>
+</html>
