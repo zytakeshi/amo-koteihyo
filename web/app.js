@@ -1481,7 +1481,7 @@
         <table class="tc-month-table">
           <thead>
             <tr>
-              <th>日</th><th>曜</th><th>出勤</th><th>退勤</th><th>休憩</th><th>実働</th><th>超過(参考)</th><th></th>
+              <th>日</th><th>曜</th><th>出勤</th><th>退勤</th><th>休憩</th><th>実働</th>${showRef ? "<th>実働(丸め・参考)</th>" : ""}<th>超過(参考)</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -1516,8 +1516,8 @@
     const inCell = d.in ? escapeHtml(d.in) : "—";
     const brk = breakMinutes(d.breaks);
     const brkCell = brk ? `${brk}分` : "—";
-    let workedCell = fmtMin(d.workedRaw);
-    if (showRef && d.workedRef != null) workedCell += ` <small>(${fmtMin(d.workedRef)})</small>`;
+    const workedCell = fmtMin(d.workedRaw);
+    const workedRefCell = showRef ? `<td>${fmtMin(d.workedRef)}</td>` : "";
     const overCell = fmtMin(d.overStd);
 
     // Render the inline editor only when the draft is pinned to THIS staff/month
@@ -1533,15 +1533,16 @@
         <td>${outCell}</td>
         <td>${brkCell}</td>
         <td>${workedCell}</td>
+        ${workedRefCell}
         <td>${overCell}</td>
         <td><button class="tc-edit-btn" data-action="tc-edit-open" data-date="${d.date}" type="button" aria-label="修正">✎</button></td>
       </tr>
     `;
     if (!editing) return mainRow;
-    return mainRow + renderTCEditorRow();
+    return mainRow + renderTCEditorRow(showRef);
   }
 
-  function renderTCEditorRow() {
+  function renderTCEditorRow(showRef) {
     const d = state.tcEditDraft;
     const breakRows = d.breaks
       .map(
@@ -1556,7 +1557,7 @@
       .join("");
     return `
       <tr class="tc-edit-row">
-        <td colspan="8">
+        <td colspan="${showRef ? 9 : 8}">
           <div class="tc-editor">
             <div class="tc-edit-times">
               <label>出勤 <input type="time" value="${escapeHtml(d.in)}" data-action="tc-edit-in" /></label>
