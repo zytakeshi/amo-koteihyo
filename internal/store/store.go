@@ -31,6 +31,12 @@ type Store struct {
 	mu   sync.Mutex
 	db   *DB
 	path string // data/koteihyo.json への絶対/相対パス
+	// failSave はテスト専用の save 失敗注入フラグ。true の間 save() は IO を行わず
+	// エラーを返す（チェックポイント復元の検証用）。本番では常に false。
+	failSave bool
+	// lastRollingDate は日次バックアップを最後に処理した YYYYMMDD（§B3.5-2）。
+	// 同一日の 2 回目以降の save で stat を省くための面内キャッシュ。
+	lastRollingDate string
 }
 
 // Open はデータファイルを読み込む（無ければ初期シードを投入して保存）。
@@ -50,6 +56,11 @@ func Open(path string) (*Store, error) {
 		}
 		return nil, fmt.Errorf("データ読み込み失敗: %w", err)
 	}
+	// ダウングレード安全網（§B3.5-1）: normalize 前の生バイトでタイムカード列の
+	// 有無を判定し、旧フォーマットなら一度だけ退避する。失敗は起動中止。
+	if err := maybePreUpgradeBackup(path, data); err != nil {
+		return nil, err
+	}
 	var db DB
 	if err := json.Unmarshal(data, &db); err != nil {
 		return nil, fmt.Errorf("データ解析失敗: %w", err)
@@ -62,14 +73,17 @@ func Open(path string) (*Store, error) {
 // seed は初回起動時の初期データ（§1）。7工程＋単価、スタッフ3名（小池・井上・浜田）。
 func seed() *DB {
 	db := &DB{
-		Version:   1,
-		Staff:     []*Staff{},
-		Processes: []*Process{},
-		Counts:    map[string]int{},
-		Memos:     map[string]string{},
-		Events:    []*Event{},
-		Redo:      []*Event{},
-		Seq:       0,
+		Version:       1,
+		Staff:         []*Staff{},
+		Processes:     []*Process{},
+		Counts:        map[string]int{},
+		Memos:         map[string]string{},
+		Attendance:    map[string]*DayAttendance{},
+		AttendanceRev: map[string]int{},
+		TCConfig:      defaultTCConfig(),
+		Events:        []*Event{},
+		Redo:          []*Event{},
+		Seq:           0,
 	}
 	procs := []struct {
 		name  string
@@ -117,6 +131,24 @@ func normalize(db *DB) {
 	if db.Memos == nil {
 		db.Memos = map[string]string{}
 	}
+	// 勤怠系コンテナの nil セーフ化。値（事実）は書き換えない（§A6）。
+	if db.Attendance == nil {
+		db.Attendance = map[string]*DayAttendance{}
+	}
+	if db.AttendanceRev == nil {
+		db.AttendanceRev = map[string]int{}
+	}
+	if db.TCConfig == nil {
+		db.TCConfig = defaultTCConfig()
+	}
+	// 手編集などで attendance の値が null（*DayAttendance が nil）のキーが混じって
+	// いると後段の参照で panic し得る。コンテナ衛生としてそのキーを落とす
+	// （「欠勤」= キー欠落なので事実の書き換えにはならない）。
+	for k, v := range db.Attendance {
+		if v == nil {
+			delete(db.Attendance, k)
+		}
+	}
 	// 壊れた/手編集されたファイルに null 要素（"staff":[null] 等）が混じって
 	// いても、後段のソート/履歴/undo で nil 参照 panic にならないよう除去する。
 	db.Events = compactNonNil(db.Events)
@@ -146,6 +178,10 @@ func compactNonNil[T any](in []*T) []*T {
 // 自動保存の台帳なので、電源断でも直近の保存が失われないよう本体・親ディレクトリ
 // ともにディスクへ確実に書き出す（durability）。呼び出し側で mu を保持していること。
 func (s *Store) save() error {
+	if s.failSave {
+		// テスト注入（チェックポイント復元の検証用）。本番では常に false。
+		return fmt.Errorf("保存に失敗しました（注入）")
+	}
 	data, err := json.MarshalIndent(s.db, "", "  ")
 	if err != nil {
 		return fmt.Errorf("データ整形失敗: %w", err)
@@ -180,7 +216,25 @@ func (s *Store) save() error {
 		_ = dir.Sync()
 		_ = dir.Close()
 	}
+	// 保存成功後に日次ローリングバックアップ（§B3.5-2、非致命）。
+	s.rollingBackup(data)
 	return nil
+}
+
+// cloneDB は DB 全体を JSON ラウンドトリップで深くコピーする。
+// undo/redo/revert・タイムカード系の「全か無か」チェックポイントに使う
+// （このデータ規模では十分安価）。marshal/unmarshal はプレーンな型のみなので
+// 失敗はプログラマエラー → fail loud（panic）。
+func cloneDB(db *DB) *DB {
+	data, err := json.Marshal(db)
+	if err != nil {
+		panic(fmt.Sprintf("cloneDB marshal 失敗: %v", err))
+	}
+	var c DB
+	if err := json.Unmarshal(data, &c); err != nil {
+		panic(fmt.Sprintf("cloneDB unmarshal 失敗: %v", err))
+	}
+	return &c
 }
 
 // nextID は連番 ID を発行する（決定的）。
@@ -587,12 +641,19 @@ type UndoResult struct {
 }
 
 // Undo は最後の実操作を逆適用し、redo へ退避、kind:"undo" を append する。
+// スナップショット復号失敗・保存失敗時は DB 全体を巻き戻して（全か無か）エラーを返す。
 func (s *Store) Undo() (*UndoResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	res := s.undoOne()
+	before := cloneDB(s.db)
+	res, err := s.undoOne()
+	if err != nil {
+		s.db = before
+		return nil, err
+	}
 	if res.Applied {
 		if err := s.save(); err != nil {
+			s.db = before
 			return nil, err
 		}
 	}
@@ -602,13 +663,16 @@ func (s *Store) Undo() (*UndoResult, error) {
 }
 
 // undoOne は1件 undo する（save はしない。caller が行う）。mu 保持前提。
-func (s *Store) undoOne() *UndoResult {
+// 逆適用に失敗（スナップショット破損等）した場合はエラーを返す。
+func (s *Store) undoOne() (*UndoResult, error) {
 	idx := s.lastUndoableIndex()
 	if idx < 0 {
-		return &UndoResult{Applied: false}
+		return &UndoResult{Applied: false}, nil
 	}
 	ev := s.db.Events[idx]
-	s.reverseApply(ev)
+	if err := s.reverseApply(ev); err != nil {
+		return nil, err
+	}
 	// redo 用に退避（先頭へ）。
 	s.db.Redo = append([]*Event{ev}, s.db.Redo...)
 	// 監査イベント。
@@ -618,16 +682,28 @@ func (s *Store) undoOne() *UndoResult {
 		Label:   ev.Label,
 		BizDate: ev.BizDate,
 		StaffID: ev.StaffID,
-	}
+	}, nil
 }
 
 // reverseApply は実操作 ev を逆適用して prev 状態に戻す。
-func (s *Store) reverseApply(ev *Event) {
+// tc_set / tc_config_set はスナップショット復号に失敗すると誤った状態を
+// 黙って適用せず、エラーを返して呼び出し側（undo/redo/revert → API）で
+// 500 として顕在化させる（§A3-3）。既存種別は常に nil を返す。
+func (s *Store) reverseApply(ev *Event) error {
 	switch ev.Kind {
 	case "count_inc", "count_dec", "count_set":
 		s.setCount(countKey(ev.StaffID, ev.BizDate, ev.ProcessID), toInt(ev.Prev))
 	case "memo_set":
 		s.setMemo(memoKey(ev.StaffID, ev.BizDate), toStr(ev.Prev))
+	case "tc_set":
+		return s.applyDaySnapshot(ev.StaffID, ev.BizDate, ev.Prev)
+	case "tc_config_set":
+		c, err := decodeTCConfig(ev.Prev)
+		if err != nil {
+			return err
+		}
+		s.db.TCConfig = c
+		return nil
 	case "process_add":
 		// 追加の逆 = 非アクティブ化（ソフト削除）。
 		if p := s.findProcess(ev.ProcessID); p != nil {
@@ -663,15 +739,25 @@ func (s *Store) reverseApply(ev *Event) {
 	case "staff_reorder":
 		s.applyOrder(false, toStrSlice(ev.Prev))
 	}
+	return nil
 }
 
 // forwardApply は実操作 ev を再適用して next 状態にする（redo 用）。
-func (s *Store) forwardApply(ev *Event) {
+func (s *Store) forwardApply(ev *Event) error {
 	switch ev.Kind {
 	case "count_inc", "count_dec", "count_set":
 		s.setCount(countKey(ev.StaffID, ev.BizDate, ev.ProcessID), toInt(ev.Next))
 	case "memo_set":
 		s.setMemo(memoKey(ev.StaffID, ev.BizDate), toStr(ev.Next))
+	case "tc_set":
+		return s.applyDaySnapshot(ev.StaffID, ev.BizDate, ev.Next)
+	case "tc_config_set":
+		c, err := decodeTCConfig(ev.Next)
+		if err != nil {
+			return err
+		}
+		s.db.TCConfig = c
+		return nil
 	case "process_add":
 		if p := s.findProcess(ev.ProcessID); p != nil {
 			p.Active = true
@@ -705,6 +791,7 @@ func (s *Store) forwardApply(ev *Event) {
 	case "staff_reorder":
 		s.applyOrder(false, toStrSlice(ev.Next))
 	}
+	return nil
 }
 
 // applyOrder は ids の並びに従って order を 0..n-1 で振り直す。
@@ -740,11 +827,16 @@ func (s *Store) Redo() (*RedoResult, error) {
 	if len(s.db.Redo) == 0 {
 		return &RedoResult{Applied: false, CanUndo: s.canUndo(), CanRedo: s.canRedo()}, nil
 	}
+	before := cloneDB(s.db)
 	ev := s.db.Redo[0]
 	s.db.Redo = s.db.Redo[1:]
-	s.forwardApply(ev)
+	if err := s.forwardApply(ev); err != nil {
+		s.db = before
+		return nil, err
+	}
 	s.appendAudit("redo", "やり直し: "+ev.Label, ev.BizDate, ev.StaffID)
 	if err := s.save(); err != nil {
+		s.db = before
 		return nil, err
 	}
 	return &RedoResult{
@@ -761,8 +853,10 @@ func (s *Store) Redo() (*RedoResult, error) {
 func (s *Store) Revert(eventID string) (int, bool, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// 入力（未知/欠落 ID）は 400 になるよう ValidationError で返す。復号破損・保存失敗は
+	// 型なしエラーのまま 500 に振り分けられる（§A7 finding 6）。
 	if eventID == "" {
-		return 0, false, false, fmt.Errorf("eventId は必須です")
+		return 0, false, false, verr("eventId は必須です")
 	}
 	// 指定 event の添字を探す。
 	target := -1
@@ -773,12 +867,31 @@ func (s *Store) Revert(eventID string) (int, bool, bool, error) {
 		}
 	}
 	if target < 0 {
-		return 0, false, false, fmt.Errorf("イベントが見つかりません: %s", eventID)
+		return 0, false, false, verr("イベントが見つかりません: %s", eventID)
+	}
+
+	// スナップショットの事前検証（§A3.5 / finding 7）: revert が触れ得る target 以降の
+	// tc_set / tc_config_set を、いずれのミューテーションよりも前に全て復号検証する。
+	// 破損があればここで（無変更のまま）失敗させる。
+	for i := target; i < len(s.db.Events); i++ {
+		ev := s.db.Events[i]
+		switch ev.Kind {
+		case "tc_set":
+			if _, err := decodeDay(ev.Prev); err != nil {
+				return 0, false, false, err
+			}
+		case "tc_config_set":
+			if _, err := decodeTCConfig(ev.Prev); err != nil {
+				return 0, false, false, err
+			}
+		}
 	}
 
 	// 「指定 event 以降の実操作」をすべて取り消す。
 	// undoOne を繰り返し、lastUndoableIndex が target より前になるまで続ける。
 	// ただし無限ループ防止に上限を events 件数とする。
+	// 途中の復号失敗・保存失敗では DB 全体を巻き戻す（全か無か）。
+	before := cloneDB(s.db)
 	count := 0
 	guard := len(s.db.Events) + 1
 	for guard > 0 {
@@ -787,7 +900,11 @@ func (s *Store) Revert(eventID string) (int, bool, bool, error) {
 		if idx < target {
 			break // target より前まで戻った（これ以上は対象外）。
 		}
-		res := s.undoOne()
+		res, err := s.undoOne()
+		if err != nil {
+			s.db = before
+			return 0, false, false, err
+		}
 		if !res.Applied {
 			break
 		}
@@ -800,6 +917,7 @@ func (s *Store) Revert(eventID string) (int, bool, bool, error) {
 	// revert 監査イベント（最後にまとめて1件）。
 	s.appendAudit("revert", fmt.Sprintf("ここまで戻す（%d件取消）", count), s.db.Events[target].BizDate, s.db.Events[target].StaffID)
 	if err := s.save(); err != nil {
+		s.db = before
 		return 0, false, false, err
 	}
 	return count, s.canUndo(), s.canRedo(), nil
@@ -1088,8 +1206,10 @@ func (s *Store) ExportCSVData(start, end string) ([]CSVRow, error) {
 				continue
 			}
 			rows = append(rows, CSVRow{
-				StaffName:   st.Name,
-				ProcessName: p.Name,
+				// CSV 数式インジェクション対策（§A8）。ユーザ編集可能な
+				// スタッフ名・工程名を含む全 CSV 出力に適用する。
+				StaffName:   csvSafe(st.Name),
+				ProcessName: csvSafe(p.Name),
 				Price:       p.Price,
 				Count:       c,
 				Sales:       c * p.Price,

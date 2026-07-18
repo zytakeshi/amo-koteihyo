@@ -213,6 +213,9 @@ html{font-size:15px}
 <li><a href="#s8">設定 — 工程名・単価・スタッフを変える</a></li>
 <li><a href="#s9">CSV書き出し・印刷</a></li>
 <li><a href="#s10">データの保存・バックアップ・引っ越し</a></li>
+<li><a href="#s-timecard">タイムカード（出勤・退勤・休憩）</a></li>
+<li><a href="#s-update">アプリの自動アップデート</a></li>
+<li><a href="#s-firewall">ファイアウォールを再び有効にする手順</a></li>
 <li><a href="#s11">困ったとき（Q&amp;A）</a></li>
 </ol>
 </nav>
@@ -526,9 +529,129 @@ html{font-size:15px}
 <p>新しいPCに <strong>exe</strong> を置き、<strong>data\koteihyo.json</strong> を同じ場所にコピーするだけ。全部のデータがそのまま使えます。</p>
 </section>
 
-<!-- ===== 11. Q&A ===== -->
+<!-- ===== 11. タイムカード ===== -->
+<section id="s-timecard" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">11</span><h2>タイムカード（出勤・退勤・休憩） <span class="pill rose">新機能</span></h2></div>
+<p>紙のタイムカードの代わりに、<strong>出勤・退勤・休憩</strong>をこのアプリで打刻できます。工程表と同じデータ・同じ URL / QR で使え、同じ「元に戻す・履歴」も効きます。</p>
+<p>上のメニューの <strong>「タイムカード」</strong>を開くと、<strong>「打刻」</strong>と<strong>「月次」</strong>の2つのタブがあります。</p>
+
+<h3 style="margin:14px 0 6px">打刻タブ（入口の iPad 向け）</h3>
+<ol class="steps">
+<li>大きな<strong>時計</strong>と、スタッフごとのボタンが並びます。</li>
+<li>出勤したら自分の<strong>「出勤」</strong>を押すだけ（時刻はパソコンの時計で自動記録）。</li>
+<li>休憩に入る時は<strong>「休憩開始」</strong>、戻ったら<strong>「休憩終了」</strong>（何回でも）。</li>
+<li>帰る時は<strong>「退勤」</strong>。押せるボタンだけが表示されます。</li>
+</ol>
+
+<div class="mini-ui">
+<div class="tabs-mock">
+<span class="tab active">打刻</span>
+<span class="tab">月次</span>
+</div>
+<div style="text-align:center;font-weight:700;font-size:1.1rem;margin:8px 0">7月18日(土)　14:23:07</div>
+<div style="background:var(--paper-2);border-radius:var(--r);padding:8px 12px;font-size:.82rem;margin-bottom:10px">⚠ 7/17 浜田さんの退勤打刻がありません</div>
+<div class="setting-row"><span class="name">小池 <span class="pill green">勤務中 09:58〜</span></span>
+<span><span class="pill" style="background:var(--paper-2);cursor:default">休憩開始</span> <span class="pill rose" style="cursor:default">退勤</span></span></div>
+<div class="setting-row"><span class="name">井上 <span class="pill" style="cursor:default">休憩中 12:30〜</span></span>
+<span><span class="pill" style="background:var(--paper-2);cursor:default">休憩終了</span></span></div>
+<div class="caption">▲ 打刻タブのイメージ</div>
+</div>
+
+<div class="tip">
+<div class="tip-label">💡 前の日の退勤を押し忘れたら</div>
+夜をまたいで退勤し忘れた時は、翌日そのスタッフに <strong>「退勤（前日分）」</strong>ボタンが出ます。押すと前日の退勤として記録されます（時刻は 23:59 として印が付きます）。直したい時は「月次」の <strong>✎</strong> で修正できます。
+</div>
+
+<h3 style="margin:16px 0 6px">月次タブ（集計・修正・書き出し）</h3>
+<p>スタッフと月を選ぶと、その月の<strong>出勤・退勤・休憩・実働時間</strong>が一覧で出ます。退職・無効にしたスタッフでも、その月に打刻があれば <span class="pill" style="cursor:default">退職/無効</span> の印付きで表示され、給与のための修正ができます。</p>
+<ul>
+<li>各行の <strong>✎</strong> を押すと、その場で時刻・休憩・勤怠メモを直せます（保存すると履歴に残ります）。</li>
+<li><strong>「CSV」</strong>で Excel 用に書き出し、<strong>「印刷」</strong>で今表示中のスタッフの月表を紙に印刷できます。</li>
+</ul>
+
+<div class="tip">
+<div class="tip-label">💡 丸め表示は「参考」だけ</div>
+「設定」の<strong>「タイムカード設定」</strong>で、実働時間の丸め表示（5分・15分など）や所定労働時間を決められます。ただし<strong>給与計算に使う数字は、常に丸めていない実測値</strong>です。丸めた値はあくまで参考表示で、初期設定は「丸めなし」です。
+</div>
+</section>
+
+<!-- ===== 12. 自動アップデート ===== -->
+<section id="s-update" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">12</span><h2>アプリの自動アップデート</h2></div>
+<p>新しいバージョンが出ると、<strong>カレンダー画面の上に案内</strong>が表示されます。</p>
+
+<div class="mini-ui">
+<div style="background:var(--white);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;font-size:.88rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+<span>新しいバージョン <strong>v1.1.0</strong> があります</span>
+<span class="pill rose" style="cursor:default">今すぐ更新</span>
+<span class="pill" style="cursor:default">あとで</span>
+</div>
+<div class="caption">▲ 更新のお知らせ（カレンダー画面）</div>
+</div>
+
+<ol class="steps">
+<li><strong>「今すぐ更新」</strong>を押すと確認が出ます。更新中は<strong>全員のアプリがいったん止まり、約10秒で自動的に再開</strong>します。</li>
+<li>更新の間は<strong>「更新中… そのままお待ちください」</strong>の画面になります。終わると自動で新しい画面に切り替わります。</li>
+<li>今はまだ更新したくない時は<strong>「あとで」</strong>。次に開いた時にまた案内されます。</li>
+</ol>
+
+<div class="tip">
+<div class="tip-label">💡 データはそのまま引き継がれます</div>
+更新してもタイムカードや工程表のデータは<strong>そのまま</strong>残ります。バックアップは、<strong>タイムカード対応版へ初めて上げた時に一度</strong>と、<strong>毎日はじめての保存時（過去14日分を自動で保存）</strong>に作られます（<code>data\backup\</code> の中）。もし古い版に戻す時は、この中の同じ日付のバックアップから復元してください。
+</div>
+
+<div class="card" style="border-left:4px solid var(--rose)">
+<strong>⚠ 最初の一回だけ手動更新</strong><br>
+今 v1.0.0 をお使いの場合、v1.1.0 へは<strong>新しい exe を手でダウンロードして置き換える</strong>のが最後の手作業です（v1.0.0 には自動更新機能がまだ無いため）。v1.1.0 以降は、上の「今すぐ更新」で自動更新できます。
+</div>
+
+<div class="tip">
+<div class="tip-label">💡 更新が進まない時</div>
+90秒たっても画面が切り替わらない時は、<strong>パソコンの黒いウィンドウ</strong>を確認してください。指示が出ていれば、その通りに <code>AMO-koteihyo.exe</code> をダブルクリックし直せば元に戻せます（更新前のアプリは <code>AMO-koteihyo.exe.old</code> として残っています）。
+</div>
+</section>
+
+<!-- ===== 13. ファイアウォール再有効化 ===== -->
+<section id="s-firewall" class="section reveal-hidden">
+<div class="section-head"><span class="section-num">13</span><h2>ファイアウォールを再び有効にする手順</h2></div>
+<p>「つなぐために一時的にファイアウォールを切っていた」場合でも、<strong>ファイアウォールは必ず「オン」に戻してください</strong>。オンのままでも、このアプリだけを許可すれば iPad / iPhone から使えます。</p>
+
+<ol class="steps">
+<li>Windows の<strong>「Windows セキュリティ」→「ファイアウォールとネットワーク保護」</strong>で、ファイアウォールを<strong>オン</strong>に戻します。</li>
+<li>アプリのフォルダの <strong>「ファイアウォール許可.bat」を右クリック →「管理者として実行」</strong>します（「はい」を押す）。<br>
+　または <code>AMO-koteihyo.exe</code> を一度起動して、出てきた<strong>「許可しますか？」で「はい」</strong>を押すだけでもOKです。</li>
+<li>iPad / iPhone で「接続」画面の URL / QR を開き、<strong>つながることを確認</strong>します。</li>
+</ol>
+
+<div class="tip">
+<div class="tip-label">💡 なぜ .bat とアプリのどちらでも良いの？</div>
+「ファイアウォール許可.bat」とアプリは<strong>まったく同じ許可ルール</strong>を作ります。どちらで許可しても、アプリはそのルールを正しく認識します。
+</div>
+
+<div class="card dark">
+<div class="label">🔧 それでもつながらない時のチェック（詳しい人向け）</div>
+<div style="font-size:.88rem;line-height:1.9;margin-top:6px">
+・Windows Defender ファイアウォールで<strong>「すべての受信接続をブロック」（blockinboundalways）</strong>がオンになっていないか。オンだと、個別の許可ルールがあっても受信が遮断されます。<br>
+・このアプリを<strong>明示的にブロックするルール</strong>が別に作られていないか（許可より優先されます）。<br>
+・会社のグループポリシーで<strong>「ローカルのファイアウォール規則を結合しない」</strong>設定になっていないか。<br>
+・パソコンと iPad が<strong>同じ Wi-Fi（同じネットワーク）</strong>か。
+</div>
+</div>
+
+<div class="tip">
+<div class="tip-label">📌 SmartScreen が出た時（別の話）</div>
+起動時に青い画面で<strong>「WindowsによってPCが保護されました」</strong>が出たら、<strong>「詳細情報」→「実行」</strong>で起動できます。これはファイアウォールとは別の仕組みで、アプリの実行を確認しているだけです。
+</div>
+
+<div class="card" style="border-left:4px solid var(--rose)">
+<strong>⚠ ファイアウォールやウイルス対策ソフトは「切らない」でください。</strong><br>
+つながらない原因のほとんどは<strong>「このアプリを許可していないだけ」</strong>です。上の手順でアプリを許可すれば、保護をオンにしたまま安全に使えます。
+</div>
+</section>
+
+<!-- ===== 14. Q&A ===== -->
 <section id="s11" class="section reveal-hidden">
-<div class="section-head"><span class="section-num">11</span><h2>困ったとき（Q&amp;A）</h2></div>
+<div class="section-head"><span class="section-num">14</span><h2>困ったとき（Q&amp;A）</h2></div>
 
 <details class="qa-item">
 <summary>iPad / iPhone で開けない</summary>

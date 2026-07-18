@@ -5,6 +5,7 @@ data/
 
 # ビルド成果物
 /build/*.exe
+/build/*.sha256
 /build/*-mac
 /build/*-linux
 koteihyo
