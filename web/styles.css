@@ -1412,6 +1412,27 @@ p {
   flex-wrap: wrap;
 }
 
+/* 削除を左、保存/取消を右に振り分ける（記録のある日のみ） */
+.tc-edit-actions--split {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tc-edit-actions-main {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tc-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-weight: 900;
+  color: var(--rose-deep);
+}
+
 /* --- settings panel --- */
 .tc-settings {
   display: grid;

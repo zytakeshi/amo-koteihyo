@@ -124,6 +124,7 @@
     tcConfig: null, // { roundUnit, roundDir, standardMinutes } from bootstrap/config
     tcConfirmOpen: false, // inline 破棄 confirm bar
     tcPending: null, // deferred draft-destroying action (run on 破棄)
+    tcDeleteConfirmOpen: false, // inline「この日の打刻を全部消す」confirm bar
 
     // ---- 自動アップデート（§B） ----
     version: "", // running app version (bootstrap)
@@ -367,6 +368,7 @@
    * Navigation helpers
    * ========================================================== */
   async function goView(view) {
+    resetTCEdit(); // leaving/entering a top-level view tears down any open editor (codex #2)
     state.view = view;
     if (view === "grid") {
       await loadGrid();
@@ -1233,11 +1235,8 @@
   }
 
   function discardDraftAndContinue() {
-    state.tcEditDirty = false;
-    state.tcEditDraft = null;
-    state.tcConfirmOpen = false;
-    const fn = state.tcPending;
-    state.tcPending = null;
+    const fn = state.tcPending; // capture before resetTCEdit clears tcPending
+    resetTCEdit();
     if (fn) fn();
     else renderKeepingScroll();
   }
@@ -1544,6 +1543,31 @@
 
   function renderTCEditorRow(showRef) {
     const d = state.tcEditDraft;
+    // 記録のある日だけ削除を出す。開いた時点のサーバ行に打刻があったか（d.hadRecord）で
+    // 判定する（可変ドラフトや、過去の削除で >0 になった rev では誤判定するため、codex #3）。
+    // 空の日のエディタは保存/取消のみ（全空 POST は no-op で誤解を招くため出さない）。
+    const hasRecord = !!d.hadRecord;
+    // 削除は破線ガード（tcConfirmOpen）と同じ「ページ内 confirm」方式（window.confirm 不使用）。
+    const deleteControl = !hasRecord
+      ? ""
+      : state.tcDeleteConfirmOpen
+        ? `<div class="tc-delete-confirm">この日の打刻を本当に消しますか？
+            <button class="btn btn-danger btn-sm" data-action="tc-delete-confirm" type="button">消す</button>
+            <button class="btn btn-ghost btn-sm" data-action="tc-delete-cancel" type="button">やめる</button>
+          </div>`
+        : `<button class="btn btn-danger" data-action="tc-delete-open" type="button">この日の打刻を全部消す</button>`;
+    const actions = deleteControl
+      ? `<div class="tc-edit-actions tc-edit-actions--split">
+              <div class="tc-edit-delete">${deleteControl}</div>
+              <div class="tc-edit-actions-main">
+                <button class="btn btn-ink" data-action="tc-edit-save" type="button">保存</button>
+                <button class="btn btn-ghost" data-action="tc-edit-cancel" type="button">取消</button>
+              </div>
+            </div>`
+      : `<div class="tc-edit-actions">
+              <button class="btn btn-ink" data-action="tc-edit-save" type="button">保存</button>
+              <button class="btn btn-ghost" data-action="tc-edit-cancel" type="button">取消</button>
+            </div>`;
     const breakRows = d.breaks
       .map(
         (b, i) => `
@@ -1570,10 +1594,7 @@
             <label class="tc-note-label">勤怠メモ
               <textarea data-action="tc-edit-note" placeholder="遅刻・早退などのメモ（任意）">${escapeHtml(d.attendanceNote)}</textarea>
             </label>
-            <div class="tc-edit-actions">
-              <button class="btn btn-ink" data-action="tc-edit-save" type="button">保存</button>
-              <button class="btn btn-ghost" data-action="tc-edit-cancel" type="button">取消</button>
-            </div>
+            ${actions}
           </div>
         </td>
       </tr>
@@ -1602,6 +1623,27 @@
     }
   }
 
+  // Central editor-teardown: clears the draft AND every piece of confirm/dirty
+  // state so a stale 破棄 / delete confirm can never survive an editor exit
+  // (nav, sub-tab, staff/month switch, cancel, save, discard) — codex MED #2.
+  function resetTCEdit() {
+    state.tcEditDraft = null;
+    state.tcEditDirty = false;
+    state.tcConfirmOpen = false;
+    state.tcPending = null;
+    state.tcDeleteConfirmOpen = false;
+  }
+
+  // Whether a SERVER row actually holds punch data. Pinned once at editor open
+  // (into d.hadRecord) so the delete button reflects the record-at-open, not the
+  // live (possibly all-cleared) draft or a rev bumped by a prior delete — codex #3.
+  function rowHasRecord(r) {
+    return !!(
+      r &&
+      (r.in || r.out || (Array.isArray(r.breaks) && r.breaks.length > 0) || r.attendanceNote)
+    );
+  }
+
   function openTCEdit(date) {
     const mo = state.tcMonth;
     if (!mo) return;
@@ -1618,8 +1660,10 @@
       breaks: (row.breaks || []).map((b) => ({ start: b.start || "", end: b.end || "" })),
       attendanceNote: row.attendanceNote || "",
       expectedRev: row.rev,
+      hadRecord: rowHasRecord(row), // record-at-open (codex #3)
     };
     state.tcEditDirty = false;
+    state.tcDeleteConfirmOpen = false; // fresh editor never opens mid-confirm
     renderKeepingScroll();
   }
 
@@ -1639,14 +1683,17 @@
     if (!state.tcEditDraft || state.tcEditDirty) return;
     const mo = state.tcMonth;
     if (!draftMatchesMonth(state.tcEditDraft, mo)) {
-      state.tcEditDraft = null; // loaded a different staff/month — close it.
+      resetTCEdit(); // loaded a different staff/month — close it.
       return;
     }
     const row = mo && (mo.days || []).find((d) => d.date === state.tcEditDraft.date);
     if (!row) {
-      state.tcEditDraft = null;
+      resetTCEdit();
       return;
     }
+    // A background poll/undo that bumped this day's rev must invalidate an open
+    // delete confirm — otherwise 消す would delete the NEWER snapshot (codex HIGH #1).
+    if (row.rev !== state.tcEditDraft.expectedRev) state.tcDeleteConfirmOpen = false;
     state.tcEditDraft = {
       staffId: state.tcEditDraft.staffId, // preserve pinned context (finding 1)
       month: state.tcEditDraft.month,
@@ -1656,6 +1703,7 @@
       breaks: (row.breaks || []).map((b) => ({ start: b.start || "", end: b.end || "" })),
       attendanceNote: row.attendanceNote || "",
       expectedRev: row.rev,
+      hadRecord: rowHasRecord(row), // re-pin from refreshed server row (codex #3)
     };
   }
 
@@ -1668,18 +1716,39 @@
     if (btn) btn.disabled = disabled;
   }
 
-  async function saveTCEdit() {
+  // opts.deleteAll: post all fields empty against the pinned rev — the store's
+  // all-empty-deletes contract (tc_set with a null snapshot; undoable). Routes
+  // through the same single-flight / 409 / refresh path as a normal save.
+  async function saveTCEdit(opts = {}) {
     const d = state.tcEditDraft;
     if (!d || tcEditSaving) return;
+    const deleteAll = !!opts.deleteAll;
+    // Hard-gate delete execution: a delete may only fire from an OPEN confirm on
+    // the month editor whose draft still matches the loaded month. Blocks a delete
+    // firing against a context that shifted (poll/nav) between confirm and 消す —
+    // codex HIGH #1.
+    if (
+      deleteAll &&
+      !(
+        state.tcDeleteConfirmOpen &&
+        state.view === "timecard" &&
+        state.timecardTab === "month" &&
+        draftMatchesMonth(d, state.tcMonth)
+      )
+    ) {
+      state.tcDeleteConfirmOpen = false;
+      renderKeepingScroll();
+      return;
+    }
     const payload = {
       // Post strictly to the pinned staff/date, never the (possibly poll-changed)
       // global selection — no fallback (round-3 P1).
       staffId: d.staffId,
       date: d.date,
-      in: d.in,
-      out: d.out,
-      breaks: d.breaks.filter((b) => b.start || b.end),
-      attendanceNote: d.attendanceNote,
+      in: deleteAll ? "" : d.in,
+      out: deleteAll ? "" : d.out,
+      breaks: deleteAll ? [] : d.breaks.filter((b) => b.start || b.end),
+      attendanceNote: deleteAll ? "" : d.attendanceNote,
       expectedRev: d.expectedRev,
     };
     tcEditSaving = true;
@@ -1696,11 +1765,13 @@
     tcEditSaving = false;
     // Stale response: editing context changed while in flight — drop it (finding 4).
     if (state.tcEditDraft !== d) return;
+    // Any resolved response closes the delete-confirm bar (success/409/400 all
+    // re-render the editor from server truth).
+    state.tcDeleteConfirmOpen = false;
     if (res.ok) {
       syncUndoFlags(res.body);
-      state.tcEditDraft = null;
-      state.tcEditDirty = false;
-      toast("打刻を保存しました");
+      resetTCEdit(); // full editor teardown on success (codex #2)
+      toast(deleteAll ? "打刻を消しました（⟲で戻せます）" : "打刻を保存しました");
       await safe(loadTCMonth);
       renderKeepingScroll();
       return;
@@ -1741,9 +1812,14 @@
             : [],
         attendanceNote: cur ? cur.attendanceNote || "" : "",
         expectedRev: newRev,
+        hadRecord: rowHasRecord(cur), // re-pin from server currentDay (codex #3)
       };
       // 最新値で作り直したので未変更状態。ユーザが改めて編集し直せる。
+      // 確認バーは分岐前に閉じ済み（reopen clean without confirm、codex #2）。
+      // 破棄確認バー/保留中ナビも消す（409で古い破棄バーが生き残らないように）。
       state.tcEditDirty = false;
+      state.tcConfirmOpen = false;
+      state.tcPending = null;
       renderKeepingScroll();
       return;
     }
@@ -2556,9 +2632,7 @@
         const tab = target.dataset.tab;
         if (tab === state.timecardTab) return;
         state.timecardTab = tab;
-        state.tcEditDraft = null;
-        state.tcEditDirty = false;
-        state.tcConfirmOpen = false;
+        resetTCEdit();
         if (tab === "month") {
           safe(loadTCMonth).then(() => {
             render();
@@ -2577,26 +2651,22 @@
         return;
       case "tc-roster":
         state.tcMonthStaffId = target.dataset.staffId;
-        state.tcEditDraft = null;
-        state.tcEditDirty = false;
+        resetTCEdit();
         safe(loadTCMonth).then(renderKeepingScroll);
         return;
       case "tc-month-prev":
         state.tcMonthYM = addYM(state.tcMonthYM || (state.today || "").slice(0, 7), -1);
-        state.tcEditDraft = null;
-        state.tcEditDirty = false;
+        resetTCEdit();
         safe(loadTCMonth).then(renderKeepingScroll);
         return;
       case "tc-month-next":
         state.tcMonthYM = addYM(state.tcMonthYM || (state.today || "").slice(0, 7), 1);
-        state.tcEditDraft = null;
-        state.tcEditDirty = false;
+        resetTCEdit();
         safe(loadTCMonth).then(renderKeepingScroll);
         return;
       case "tc-month-this":
         state.tcMonthYM = (state.today || "").slice(0, 7);
-        state.tcEditDraft = null;
-        state.tcEditDirty = false;
+        resetTCEdit();
         safe(loadTCMonth).then(renderKeepingScroll);
         return;
       case "tc-csv":
@@ -2611,10 +2681,19 @@
       case "tc-edit-save":
         saveTCEdit();
         return;
+      case "tc-delete-open":
+        state.tcDeleteConfirmOpen = true;
+        renderKeepingScroll();
+        return;
+      case "tc-delete-cancel":
+        state.tcDeleteConfirmOpen = false;
+        renderKeepingScroll();
+        return;
+      case "tc-delete-confirm":
+        saveTCEdit({ deleteAll: true });
+        return;
       case "tc-edit-cancel":
-        state.tcEditDraft = null;
-        state.tcEditDirty = false;
-        state.tcConfirmOpen = false;
+        resetTCEdit();
         renderKeepingScroll();
         return;
       case "tc-break-add":
